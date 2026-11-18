@@ -85,30 +85,44 @@ object CustomTabProviders {
   @Suppress("DEPRECATION")
   fun findProviders(context: Context): List<ProviderInfo> {
     val packageManager = context.packageManager
-    val viewIntent = Intent(Intent.ACTION_VIEW, Uri.parse("http://www.example.com")).apply {
-      addCategory(Intent.CATEGORY_BROWSABLE)
-    }
-    val resolvedActivities = packageManager.queryIntentActivities(viewIntent, 0)
-    val seenPackages = HashSet<String>()
-    val providers = ArrayList<ProviderInfo>()
+    val packages = LinkedHashSet<String>()
 
-    for (resolveInfo in resolvedActivities) {
-      val pkg = resolveInfo.activityInfo?.packageName ?: continue
-      if (pkg == context.packageName) continue
-      if (!seenPackages.add(pkg)) continue
-
-      val serviceIntent = Intent(CUSTOM_TABS_SERVICE_ACTION).setPackage(pkg)
-      if (packageManager.resolveService(serviceIntent, 0) != null) {
-        val label = try {
-          packageManager.getApplicationLabel(packageManager.getApplicationInfo(pkg, 0)).toString()
-        } catch (_: Exception) {
-          pkg
+    // Method 1: ask directly who provides the Custom Tabs service.
+    try {
+      val serviceIntent = Intent(CUSTOM_TABS_SERVICE_ACTION)
+      for (resolveInfo in packageManager.queryIntentServices(serviceIntent, 0)) {
+        val pkg = resolveInfo.serviceInfo?.packageName ?: continue
+        if (pkg != context.packageName) {
+          packages.add(pkg)
         }
-        providers.add(ProviderInfo(packageName = pkg, label = label))
       }
+    } catch (_: Exception) {
     }
 
-    return providers.sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it.label })
+    // Method 2: VIEW handlers that also expose the service.
+    try {
+      val viewIntent = Intent(Intent.ACTION_VIEW, Uri.parse("http://www.example.com")).apply {
+        addCategory(Intent.CATEGORY_BROWSABLE)
+      }
+      for (resolveInfo in packageManager.queryIntentActivities(viewIntent, 0)) {
+        val pkg = resolveInfo.activityInfo?.packageName ?: continue
+        if (pkg == context.packageName || packages.contains(pkg)) continue
+        val check = Intent(CUSTOM_TABS_SERVICE_ACTION).setPackage(pkg)
+        if (packageManager.resolveService(check, 0) != null) {
+          packages.add(pkg)
+        }
+      }
+    } catch (_: Exception) {
+    }
+
+    return packages.map { pkg ->
+      val label = try {
+        packageManager.getApplicationLabel(packageManager.getApplicationInfo(pkg, 0)).toString()
+      } catch (_: Exception) {
+        pkg
+      }
+      ProviderInfo(packageName = pkg, label = label)
+    }.sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it.label })
   }
 
   fun getSystemDefaultProvider(context: Context): String? {
