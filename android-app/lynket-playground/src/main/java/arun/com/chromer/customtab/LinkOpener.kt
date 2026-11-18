@@ -32,7 +32,8 @@ enum class OpenMode {
   IN_APP,
   ASK,
   PROVIDER,
-  OVERLAY
+  OVERLAY,
+  WEB_HEAD
 }
 
 object LinkPreferences {
