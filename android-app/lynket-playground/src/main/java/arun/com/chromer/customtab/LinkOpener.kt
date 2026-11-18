@@ -45,6 +45,7 @@ object LinkPreferences {
   private const val KEY_OPEN_MODE = "open_mode"
   private const val KEY_PROVIDER_PACKAGE = "provider_package"
   private const val KEY_SECONDARY_PROVIDER_PACKAGE = "secondary_provider_package"
+  private const val KEY_HIDE_BAR_ON_SCROLL = "hide_bar_on_scroll"
 
   private fun prefs(context: Context): SharedPreferences {
     return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
@@ -89,6 +90,14 @@ object LinkPreferences {
         putString(KEY_SECONDARY_PROVIDER_PACKAGE, packageName)
       }
     }.apply()
+  }
+
+  fun getHideBarOnScroll(context: Context): Boolean {
+    return prefs(context).getBoolean(KEY_HIDE_BAR_ON_SCROLL, false)
+  }
+
+  fun setHideBarOnScroll(context: Context, enabled: Boolean) {
+    prefs(context).edit().putBoolean(KEY_HIDE_BAR_ON_SCROLL, enabled).apply()
   }
 }
 
