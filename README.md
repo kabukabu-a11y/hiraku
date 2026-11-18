@@ -1,67 +1,67 @@
+# Hiraku
 
-# Lynket
-**Android browser app based on Custom Tabs protocol.**
+**「URLの開き方」を自分で決められるAndroidブラウザ。**
+リンク元のアプリごとに、どのブラウザで・どう開くかをカスタマイズできます。
 
-<img src="android-app/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png" align="left"
-width="200"
-    hspace="10" vspace="10">
+**An Android browser that lets you decide how every link opens.**
+Choose the open method per source app: your favorite browser's Custom Tab, an overlay window that never leaves the current app, floating bubbles, and more.
 
-Lynket utilizes Chrome Custom Tab API to create a customized browsing experience while adding innovative features like background loading with floating bubbles, article mode and multitasking using Android's recent menu.
+Based on [Lynket](https://github.com/arunkumar9t2/lynket-browser) (GPLv3). Hiraku is a personal fork with a redesigned link-opening system, a floating overlay browser, and ad blocking.
 
-Lynket is available for free on the Google Play Store.
+## ダウンロード / Download
 
+[Releases](https://github.com/kabukabu-a11y/lynket-browser/releases) から最新のAPKをダウンロードしてください。
+Download the latest APK from [Releases](https://github.com/kabukabu-a11y/lynket-browser/releases).
 
-<a href="https://play.google.com/store/apps/details?id=arun.com.chromer">
-    <img alt="Get it on Google Play"
-        height="80"
-        src="https://play.google.com/intl/en_us/badges/images/generic/en_badge_web_generic.png" />
-</a>
+インストール後、Hirakuをデフォルトブラウザに設定すると、他のアプリのリンクをHirakuが受け取るようになります。
+After installing, set Hiraku as your default browser so links from other apps are routed to it.
 
-If you have got some time, read the introduction post on [my blog](https://arunkumar.dev/Lynket-browser-2nd-anniversary-update/) or watch intro [Video](https://www.youtube.com/watch?v=Hcd2R2Lh5ks&t=2s)
+> APKから直接インストールしたアプリは、Androidの「制限付き設定」で一部の許可がブロックされることがあります。その場合は、設定 → アプリ → Hiraku → 右上の︙ →「制限付き設定を許可」を押してから許可し直してください。
+> If Android blocks a permission with "restricted settings", go to Settings → Apps → Hiraku → ︙ (top right) → "Allow restricted settings", then grant the permission again.
 
-![enter image description here](https://raw.githubusercontent.com/arunkumar9t2/chromer/master/art/chromer_screenshots.png)
+## 特徴 / Features
 
-## Features
-| Features| Demo|
-|--|--|
-| **Web heads** - Floating bubbles to load multiple links and launch them.  | ![enter image description here](https://raw.githubusercontent.com/arunkumar9t2/chromer/master/art/Web%20heads%20intro.gif) |
-| **Web heads** - Intelligently manages background loading of Custom Tabs using Android's overview screen. Uses Lollipop Document API.| ![enter image description here](https://raw.githubusercontent.com/arunkumar9t2/chromer/master/art/Background%20Loading.gif) |
-| **Provider** - Lynket works with any custom tab compatible browser. This means features like adblock, Google Account sync, data saver are inherited.  | ![enter image description here](https://raw.githubusercontent.com/arunkumar9t2/chromer/master/art/Provider%20Selection.gif) |
-| **Article mode** - Filters all unnecessary content and renders web page on a RecyclerView efficiently. Uses Crux library.  | ![enter image description here](https://raw.githubusercontent.com/arunkumar9t2/chromer/master/art/Article%20Mode.gif) |
-| **Minimize and Tabs** - Lynket can minimize the tab and also show all active tabs for you to quickly switch to.  |  ![enter image description here](https://raw.githubusercontent.com/arunkumar9t2/chromer/master/art/Multitasking.gif)|
+- **開き方は9通り＋α**：選んだブラウザのCustom Tab／通常モード、2つ目のブラウザ、システム標準のCustom Tab、アプリに留まる重ねて表示、バブル、共有、キャンセル、そして「開くたびに選ぶ」（選択画面の項目は並べ替え・非表示もできます）
+  **9 ways to open a link**: Custom Tab or normal mode of your first/second chosen browser, the system default Custom Tab, an overlay window that stays in the current app, bubbles, share, cancel — plus "ask every time" with a page preview.
+- **アプリごとに指定**：リンク元のアプリを検索して、アプリごとに開き方を設定できます。設定がないアプリは「標準の開き方」に従います
+  **Per-app rules**: search your installed apps and assign an open method to each.
+- **重ねて表示（オーバーレイ）**：今使っているアプリの上に、端末の比率に合わせた角丸の窓でページを表示。実行中のアプリを切り替えません。バーは1本で上/下を選べ、周りのぼかしもON/OFFできます
+  **Overlay browser**: a rounded, full-height floating window over the current app, with a single bar (top or bottom) and optional background blur.
+- **バブル（Web heads）**：リンクをバブルに留めておき、タップでそのままオーバーレイ表示。長押しでチラ見せプレビュー
+  **Bubbles**: park links as floating bubbles; tap to open in the overlay, long-press to peek.
+- **広告ブロック**：オープンソースのブロックリスト（pgl.yoyo.org の ad server list 等）を使ったドメイン遮断。バーにブロック件数が出て、その場でON/OFFできます
+  **Ad blocking**: domain blocking using open-source lists (pgl.yoyo.org ad server list and major ad networks), with a live blocked count in the bar.
+- **その他**：記事モード、タブと履歴、デスクトップサイト切替、細かい設定を集約した設定画面
+  **And more**: article mode, tabs & history, desktop site toggle, and a dedicated settings screen.
 
+## 権限について / Permissions
 
-## Architecture and Code Structure
-Lynket is written on a MVVM Architecture and uses Dagger 2 for dependency injection. The source code is packaged based on feature.
+| 権限 | 用途 |
+|---|---|
+| 他のアプリの上に重ねて表示 | オーバーレイ表示とバブルに必要です |
+| 通知 | オーバーレイ／バブル表示中の状態通知に使います |
+| フォアグラウンドサービス | オーバーレイとバブルを維持するために使います |
+| インターネット | ページの読み込みに使います |
 
-```
-app/src/java/<package>
-	<feature_1>\
-	<feature_2>\
-	shared\
-	utils\
-```
-### Architecture
-Below outlines sample structure of most screens. 
-![enter image description here](https://raw.githubusercontent.com/arunkumar9t2/chromer/master/art/Chromer%20Architecture.png)
+| Permission | Why |
+|---|---|
+| Draw over other apps | Required for the overlay window and bubbles |
+| Notifications | Status notifications while overlay / bubbles are active |
+| Foreground service | Keeps the overlay and bubbles alive |
+| Internet | Loading web pages |
 
+## 注意 / Notes
 
-### Code Style
+- リンクが元のアプリの中で開かれてしまう場合は、そのアプリ側の設定で「リンクをアプリ内で開く（アプリ内ブラウザ）」をオフにしてください。オフにすると、リンクがデフォルトブラウザ（Hiraku）に渡るようになります。
+  If links keep opening inside the source app, turn off that app's "open links in-app" (in-app browser) setting. Links will then be handed to the default browser (Hiraku).
+- アプリ別ルールは、リンク元のアプリが参照元（referrer）を渡してくる場合にのみ適用されます。渡してこないアプリからのリンクは「標準の開き方」で開きます。
+  Per-app rules apply only when the source app passes a referrer; otherwise the default method is used.
+- 一部のサイトはWebView内でのログインを許可していません（Googleログイン等）。その場合はCustom Tabなど他の開き方を選んでください。
+  Some sites (e.g. Google sign-in) refuse to work inside a WebView; use a Custom Tab method for those.
+- 個人プロジェクトです。動作は無保証で、自己責任でご利用ください。
+  Personal project, provided as-is with no warranty.
 
- - [mNo Hungarion notation.](http://jakewharton.com/just-say-no-to-hungarian-notation/)
- - No `Impl` suffixes for interface implementations. Instead name based on what it does. Ex: `AppStore` and implementations `AppDiskStore` and `AppSystemStore`.
- - All new modules are preferred to be written in `Kotlin`
- - Formatting - Android Studio Default.
+## ライセンス / License
 
-## Contributions
-You are more than welcome to contribute to Lynket's development. New features are branched off of `develop` . PRs are welcome against the `develop` branch. 
-How you can help:
-
- - Grab an issue from [issues](https://github.com/arunkumar9t2/chromer/issues) section that interests you.
- - Unit testing using Roboelectric and Dagger 2 is already setup but coverage is rather low. Adding tests to existing features would greatly help! Refer [src/test/](https://github.com/arunkumar9t2/chromer/tree/master/app/src/test/java/arun/com/chromer).
- - Break the ice. Feel free to create an issue to discuss your ideas.
-
-## License
-
-Lynket is licensed under the [GNU v3 Public License.](LICENSE)
-
+GPLv3. Hiraku is a fork of [Lynket](https://github.com/arunkumar9t2/lynket-browser) by Arunkumar (GPLv3); upstream copyright notices are preserved in the source files.
+広告ブロックのリストは [pgl.yoyo.org adservers](https://pgl.yoyo.org/adservers/) の公開リストをもとに作成しています。
