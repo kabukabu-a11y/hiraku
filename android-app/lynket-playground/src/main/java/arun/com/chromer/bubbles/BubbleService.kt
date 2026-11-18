@@ -43,6 +43,7 @@ import android.view.MotionEvent
 import android.view.View
 import android.view.WindowManager
 import android.widget.TextView
+import arun.com.chromer.R
 import arun.com.chromer.browser.BrowserActivity
 import arun.com.chromer.customtab.LinkPreferences
 import arun.com.chromer.home.HomeActivity
@@ -355,7 +356,7 @@ class BubbleService : Service() {
     val contentText = if (bubbles.size == 1) {
       bubbles[0].url
     } else {
-      "${bubbles.size}個のバブル"
+      getString(R.string.bubbles_count, bubbles.size)
     }
     val pendingIntent = PendingIntent.getActivity(
       this,
