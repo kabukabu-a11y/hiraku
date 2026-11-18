@@ -46,6 +46,8 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.res.stringResource
+import arun.com.chromer.R
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -85,7 +87,8 @@ class ArticleActivity : ComponentActivity() {
 @Composable
 private fun ArticleScreen(url: String, onBack: () -> Unit) {
   val context = LocalContext.current
-  var title by remember { mutableStateOf("記事モード") }
+  val defaultTitle = stringResource(R.string.article_title)
+  var title by remember { mutableStateOf(defaultTitle) }
   var loading by remember { mutableStateOf(true) }
 
   Scaffold(
@@ -94,14 +97,14 @@ private fun ArticleScreen(url: String, onBack: () -> Unit) {
         title = { Text(title, maxLines = 1, overflow = TextOverflow.Ellipsis) },
         navigationIcon = {
           IconButton(onClick = onBack) {
-            Icon(Icons.Filled.ArrowBack, contentDescription = "戻る")
+            Icon(Icons.Filled.ArrowBack, contentDescription = stringResource(R.string.act_back))
           }
         },
         actions = {
           TextButton(onClick = {
             context.startActivity(BrowserActivity.createDirectIntent(context, url))
           }) {
-            Text("元のページ")
+            Text(stringResource(R.string.article_original))
           }
         }
       )
@@ -117,7 +120,7 @@ private fun ArticleScreen(url: String, onBack: () -> Unit) {
             onTitle = { title = it },
             onLoading = { loading = it },
             onExtractFailed = {
-              Toast.makeText(ctx, "記事を抽出できませんでした", Toast.LENGTH_SHORT).show()
+              Toast.makeText(ctx, ctx.getString(R.string.article_failed), Toast.LENGTH_SHORT).show()
             }
           )
         },
