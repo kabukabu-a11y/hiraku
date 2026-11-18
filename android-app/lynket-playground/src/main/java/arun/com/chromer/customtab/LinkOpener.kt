@@ -29,9 +29,53 @@ import android.content.SharedPreferences
 import android.net.Uri
 import androidx.browser.customtabs.CustomTabsClient
 import androidx.browser.customtabs.CustomTabsIntent
-import arun.com.chromer.browser.BrowserActivity
 import arun.com.chromer.home.HomeActivity
+import arun.com.chromer.link.LinkHandlerActivity
+import org.json.JSONObject
 
+/**
+ * How a link gets opened. The first nine entries are the user-facing
+ * methods from the v2 concept; ASK is the extra "choose every time"
+ * pseudo-method that shows the chooser UI instead of opening directly.
+ */
+enum class OpenMethod(val label: String) {
+  CUSTOM_TAB_PRIMARY("選んだブラウザ（Custom Tab）"),
+  CUSTOM_TAB_SECONDARY("2つ目のブラウザ（Custom Tab）"),
+  NORMAL_PRIMARY("選んだブラウザ（通常）"),
+  NORMAL_SECONDARY("2つ目のブラウザ（通常）"),
+  CUSTOM_TAB_SYSTEM("システム標準（Custom Tab）"),
+  STAY_OVERLAY("アプリに留まる（重ねて表示）"),
+  BUBBLE("バブル"),
+  SHARE("共有"),
+  CANCEL("キャンセル"),
+  ASK("開くたびに選ぶ");
+
+  companion object {
+    /** The nine concrete methods, in the order the user defined them. */
+    val CHOICES: List<OpenMethod> = listOf(
+      CUSTOM_TAB_PRIMARY,
+      CUSTOM_TAB_SECONDARY,
+      NORMAL_PRIMARY,
+      NORMAL_SECONDARY,
+      CUSTOM_TAB_SYSTEM,
+      STAY_OVERLAY,
+      BUBBLE,
+      SHARE,
+      CANCEL
+    )
+
+    fun fromName(name: String?): OpenMethod? {
+      if (name == null) return null
+      return try {
+        valueOf(name)
+      } catch (_: IllegalArgumentException) {
+        null
+      }
+    }
+  }
+}
+
+/** Legacy mode enum, kept only to migrate old settings to [OpenMethod]. */
 enum class OpenMode {
   IN_APP,
   ASK,
@@ -46,6 +90,13 @@ object LinkPreferences {
   private const val KEY_PROVIDER_PACKAGE = "provider_package"
   private const val KEY_SECONDARY_PROVIDER_PACKAGE = "secondary_provider_package"
   private const val KEY_HIDE_BAR_ON_SCROLL = "hide_bar_on_scroll"
+  private const val KEY_DEFAULT_METHOD = "default_method"
+  private const val KEY_APP_RULES = "app_rules"
+  private const val KEY_BAR_ON_TOP = "bar_on_top"
+  private const val KEY_OVERLAY_BLUR = "overlay_blur"
+  private const val KEY_PREVIEW_ENABLED = "preview_enabled"
+  private const val KEY_ADBLOCK_ENABLED = "adblock_enabled"
+  private const val KEY_LANGUAGE = "app_language"
 
   private fun prefs(context: Context): SharedPreferences {
     return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
@@ -85,7 +136,7 @@ object LinkPreferences {
   fun setSecondaryProviderPackage(context: Context, packageName: String?) {
     prefs(context).edit().apply {
       if (packageName == null) {
-        remove(KEY_SECONDARY_PROVIDER_PACKAGE)
+        remove(KEY_PROVIDER_PACKAGE)
       } else {
         putString(KEY_SECONDARY_PROVIDER_PACKAGE, packageName)
       }
@@ -98,6 +149,113 @@ object LinkPreferences {
 
   fun setHideBarOnScroll(context: Context, enabled: Boolean) {
     prefs(context).edit().putBoolean(KEY_HIDE_BAR_ON_SCROLL, enabled).apply()
+  }
+
+  // ----- v2: default method and per-app rules -----
+
+  /**
+   * The standard way links open. Until the user picks one, the legacy
+   * mode is migrated: whatever was in effect first becomes the default.
+   */
+  fun getDefaultMethod(context: Context): OpenMethod {
+    val stored = OpenMethod.fromName(prefs(context).getString(KEY_DEFAULT_METHOD, null))
+    if (stored != null) return stored
+    return when (getMode(context)) {
+      OpenMode.PROVIDER -> OpenMethod.CUSTOM_TAB_PRIMARY
+      OpenMode.ASK -> OpenMethod.ASK
+      OpenMode.WEB_HEAD -> OpenMethod.BUBBLE
+      OpenMode.IN_APP, OpenMode.OVERLAY -> OpenMethod.STAY_OVERLAY
+    }
+  }
+
+  fun setDefaultMethod(context: Context, method: OpenMethod) {
+    prefs(context).edit().putString(KEY_DEFAULT_METHOD, method.name).apply()
+  }
+
+  fun getAppRules(context: Context): Map<String, OpenMethod> {
+    val raw = prefs(context).getString(KEY_APP_RULES, null) ?: return emptyMap()
+    return try {
+      val obj = JSONObject(raw)
+      val result = LinkedHashMap<String, OpenMethod>()
+      val keys = obj.keys()
+      while (keys.hasNext()) {
+        val key = keys.next()
+        val method = OpenMethod.fromName(obj.optString(key, null))
+        if (method != null && method != OpenMethod.ASK) {
+          result[key] = method
+        }
+      }
+      result
+    } catch (_: Exception) {
+      emptyMap()
+    }
+  }
+
+  fun getAppRule(context: Context, packageName: String?): OpenMethod? {
+    if (packageName.isNullOrBlank()) return null
+    return getAppRules(context)[packageName]
+  }
+
+  fun setAppRule(context: Context, packageName: String, method: OpenMethod?) {
+    val rules = getAppRules(context).toMutableMap()
+    if (method == null) {
+      rules.remove(packageName)
+    } else {
+      rules[packageName] = method
+    }
+    val obj = JSONObject()
+    for ((pkg, m) in rules) {
+      obj.put(pkg, m.name)
+    }
+    prefs(context).edit().putString(KEY_APP_RULES, obj.toString()).apply()
+  }
+
+  /** Resolves the method for a link coming from [referrerPackage]. */
+  fun resolveMethod(context: Context, referrerPackage: String?): OpenMethod {
+    return getAppRule(context, referrerPackage) ?: getDefaultMethod(context)
+  }
+
+  // ----- v2: display / browsing preferences -----
+
+  fun isBarOnTop(context: Context): Boolean {
+    return prefs(context).getBoolean(KEY_BAR_ON_TOP, false)
+  }
+
+  fun setBarOnTop(context: Context, onTop: Boolean) {
+    prefs(context).edit().putBoolean(KEY_BAR_ON_TOP, onTop).apply()
+  }
+
+  fun isOverlayBlurEnabled(context: Context): Boolean {
+    return prefs(context).getBoolean(KEY_OVERLAY_BLUR, true)
+  }
+
+  fun setOverlayBlurEnabled(context: Context, enabled: Boolean) {
+    prefs(context).edit().putBoolean(KEY_OVERLAY_BLUR, enabled).apply()
+  }
+
+  fun isPreviewEnabled(context: Context): Boolean {
+    return prefs(context).getBoolean(KEY_PREVIEW_ENABLED, true)
+  }
+
+  fun setPreviewEnabled(context: Context, enabled: Boolean) {
+    prefs(context).edit().putBoolean(KEY_PREVIEW_ENABLED, enabled).apply()
+  }
+
+  fun isAdBlockEnabled(context: Context): Boolean {
+    return prefs(context).getBoolean(KEY_ADBLOCK_ENABLED, true)
+  }
+
+  fun setAdBlockEnabled(context: Context, enabled: Boolean) {
+    prefs(context).edit().putBoolean(KEY_ADBLOCK_ENABLED, enabled).apply()
+  }
+
+  /** "system", "ja" or "en". */
+  fun getLanguage(context: Context): String {
+    return prefs(context).getString(KEY_LANGUAGE, "system") ?: "system"
+  }
+
+  fun setLanguage(context: Context, language: String) {
+    prefs(context).edit().putString(KEY_LANGUAGE, language).apply()
   }
 }
 
@@ -238,6 +396,28 @@ object CustomTabProviders {
       false
     }
   }
+
+  /** Opens the browser app itself (its normal UI) showing [url]. */
+  fun launchNormalBrowser(context: Context, url: String, providerPackage: String?): Boolean {
+    if (providerPackage != null && providerPackage == context.packageName) {
+      return false
+    }
+    val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url)).apply {
+      addCategory(Intent.CATEGORY_BROWSABLE)
+      if (providerPackage != null) {
+        setPackage(providerPackage)
+      }
+      if (context !is Activity) {
+        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+      }
+    }
+    return try {
+      context.startActivity(intent)
+      true
+    } catch (_: Exception) {
+      false
+    }
+  }
 }
 
 /**
@@ -251,7 +431,7 @@ class MenuActionReceiver : BroadcastReceiver() {
     val url = intent.dataString
     if (url.isNullOrBlank()) return
     try {
-      context.startActivity(BrowserActivity.createSecondaryIntent(context, url))
+      context.startActivity(LinkHandlerActivity.createDispatchIntent(context, url, OpenMethod.CUSTOM_TAB_SECONDARY))
     } catch (_: Exception) {
     }
   }
@@ -260,4 +440,3 @@ class MenuActionReceiver : BroadcastReceiver() {
     const val ACTION_OPEN_SECONDARY = "arun.com.chromer.action.OPEN_SECONDARY"
   }
 }
-
