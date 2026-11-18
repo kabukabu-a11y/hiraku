@@ -596,15 +596,10 @@ class OverlayService : Service() {
     menu.add(0, MENU_MINIMIZE, 4, "最小化")
     menu.add(0, MENU_FULLSCREEN, 5, "アプリ内で開く（全画面）")
     val sub = menu.addSubMenu(0, MENU_OTHER_METHODS, 6, "別の方法で開く")
-    val methods = listOf(
-      OpenMethod.CUSTOM_TAB_PRIMARY,
-      OpenMethod.CUSTOM_TAB_SECONDARY,
-      OpenMethod.NORMAL_PRIMARY,
-      OpenMethod.NORMAL_SECONDARY,
-      OpenMethod.CUSTOM_TAB_SYSTEM,
-      OpenMethod.BUBBLE,
-      OpenMethod.SHARE
-    )
+    // Same customized list as the chooser screens, minus the methods
+    // that make no sense from inside the overlay itself.
+    val methods = LinkPreferences.getChooserMethods(this)
+      .filter { it != OpenMethod.STAY_OVERLAY && it != OpenMethod.CANCEL }
     for ((index, method) in methods.withIndex()) {
       sub.add(1, MENU_METHOD_BASE + index, index, method.label)
     }
