@@ -28,11 +28,18 @@ jobs:
           java-version: "17"
       - name: Make gradlew executable
         run: chmod +x gradlew
-      - name: Build playground debug APK
-        run: ./gradlew :lynket-playground:assembleDebug --stacktrace
+      - name: Decode release keystore
+        run: echo "${{ secrets.HIRAKU_KEYSTORE_BASE64 }}" | base64 -d > ${{ github.workspace }}/release.jks
+      - name: Build playground release APK
+        run: ./gradlew :lynket-playground:assembleRelease --stacktrace
+        env:
+          HIRAKU_KEYSTORE_FILE: ${{ github.workspace }}/release.jks
+          HIRAKU_KEYSTORE_PASSWORD: ${{ secrets.HIRAKU_KEYSTORE_PASSWORD }}
+          HIRAKU_KEY_ALIAS: hiraku
+          HIRAKU_KEY_PASSWORD: ${{ secrets.HIRAKU_KEYSTORE_PASSWORD }}
       - name: Upload APK
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: lynket-playground-debug
-          path: android-app/lynket-playground/build/outputs/apk/debug/*.apk
+          name: lynket-playground-release
+          path: android-app/lynket-playground/build/outputs/apk/release/*.apk
