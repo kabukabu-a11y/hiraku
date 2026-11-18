@@ -284,6 +284,14 @@ private fun HomeContent(
               mode = OpenMode.OVERLAY
             }
           )
+          LinkOptionRow(
+            label = "Web heads（バブル）",
+            selected = mode == OpenMode.WEB_HEAD,
+            onSelect = {
+              LinkPreferences.setMode(context, OpenMode.WEB_HEAD)
+              mode = OpenMode.WEB_HEAD
+            }
+          )
         }
       }
     }
@@ -309,3 +317,4 @@ private fun LinkOptionRow(
     Text(text = label)
   }
 }
+
