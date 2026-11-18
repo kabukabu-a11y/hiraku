@@ -78,6 +78,8 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import arun.com.chromer.R
+import androidx.compose.ui.res.stringResource
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -183,7 +185,7 @@ class BrowserActivity : ComponentActivity() {
         IconButton(onClick = { finish() }) {
           Icon(
             imageVector = Icons.Filled.Close,
-            contentDescription = "Close"
+            contentDescription = stringResource(R.string.act_close)
           )
         }
         Column(modifier = Modifier.weight(1f)) {
@@ -207,7 +209,7 @@ class BrowserActivity : ComponentActivity() {
             LinkPreferences.setAdBlockEnabled(context, newValue)
             Toast.makeText(
               context,
-              if (newValue) "広告ブロック：オン" else "広告ブロック：オフ",
+              if (newValue) stringResource(R.string.adblock_on) else stringResource(R.string.adblock_off),
               Toast.LENGTH_SHORT
             ).show()
             webView?.reload()
@@ -215,7 +217,7 @@ class BrowserActivity : ComponentActivity() {
         ) {
           Icon(
             imageVector = ShieldIcon,
-            contentDescription = "広告ブロック",
+            contentDescription = stringResource(R.string.adblock_title),
             tint = if (adBlockEnabled) {
               MaterialTheme.colorScheme.primary
             } else {
@@ -236,7 +238,7 @@ class BrowserActivity : ComponentActivity() {
         ) {
           Icon(
             imageVector = Icons.Filled.ArrowBack,
-            contentDescription = "Back"
+            contentDescription = stringResource(R.string.act_back)
           )
         }
         IconButton(
@@ -245,7 +247,7 @@ class BrowserActivity : ComponentActivity() {
         ) {
           Icon(
             imageVector = Icons.Filled.ArrowForward,
-            contentDescription = "Forward"
+            contentDescription = stringResource(R.string.act_forward)
           )
         }
         IconButton(onClick = { webView?.reload() }) {
@@ -266,7 +268,7 @@ class BrowserActivity : ComponentActivity() {
             onDismissRequest = { menuExpanded = false }
           ) {
             DropdownMenuItem(
-              text = { Text(if (adBlockEnabled) "広告ブロック：オン" else "広告ブロック：オフ") },
+              text = { Text(if (adBlockEnabled) stringResource(R.string.adblock_on) else stringResource(R.string.adblock_off)) },
               onClick = {
                 menuExpanded = false
                 val newValue = !adBlockEnabled
@@ -276,7 +278,7 @@ class BrowserActivity : ComponentActivity() {
               }
             )
             DropdownMenuItem(
-              text = { Text(if (desktopMode) "モバイルサイトに切替" else "デスクトップサイト") },
+              text = { Text(if (desktopMode) stringResource(R.string.site_mobile) else stringResource(R.string.site_desktop)) },
               onClick = {
                 menuExpanded = false
                 val newDesktopMode = !desktopMode
@@ -289,7 +291,7 @@ class BrowserActivity : ComponentActivity() {
               }
             )
             DropdownMenuItem(
-              text = { Text("記事モード") },
+              text = { Text(stringResource(R.string.article_title)) },
               onClick = {
                 menuExpanded = false
                 val target = webView?.url ?: initialUrl
@@ -297,7 +299,7 @@ class BrowserActivity : ComponentActivity() {
               }
             )
             DropdownMenuItem(
-              text = { Text("重ねて表示") },
+              text = { Text(stringResource(R.string.menu_overlay)) },
               onClick = {
                 menuExpanded = false
                 LinkDispatcher.openOverlay(context, currentUrl)
@@ -305,27 +307,27 @@ class BrowserActivity : ComponentActivity() {
               }
             )
             DropdownMenuItem(
-              text = { Text("別の方法で開く") },
+              text = { Text(stringResource(R.string.menu_other_methods)) },
               onClick = {
                 menuExpanded = false
                 chooserVisible = true
               }
             )
             DropdownMenuItem(
-              text = { Text("共有") },
+              text = { Text(stringResource(R.string.act_share)) },
               onClick = {
                 menuExpanded = false
                 LinkDispatcher.share(context, currentUrl)
               }
             )
             DropdownMenuItem(
-              text = { Text("リンクをコピー") },
+              text = { Text(stringResource(R.string.menu_copy_link)) },
               onClick = {
                 menuExpanded = false
                 try {
                   val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                   clipboard.setPrimaryClip(ClipData.newPlainText("URL", currentUrl))
-                  Toast.makeText(context, "リンクをコピーしました", Toast.LENGTH_SHORT).show()
+                  Toast.makeText(context, context.getString(R.string.link_copied), Toast.LENGTH_SHORT).show()
                 } catch (_: Exception) {
                 }
               }
@@ -337,7 +339,7 @@ class BrowserActivity : ComponentActivity() {
     if (chooserVisible) {
       AlertDialog(
         onDismissRequest = { chooserVisible = false },
-        title = { Text("別の方法で開く") },
+        title = { Text(stringResource(R.string.menu_other_methods)) },
         text = {
           Column(
             modifier = Modifier.verticalScroll(rememberScrollState())
@@ -384,7 +386,7 @@ class BrowserActivity : ComponentActivity() {
                   .padding(vertical = 10.dp)
               ) {
                 Text(
-                  text = method.label,
+                  text = stringResource(method.labelRes),
                   style = MaterialTheme.typography.bodyLarge
                 )
               }
@@ -393,7 +395,7 @@ class BrowserActivity : ComponentActivity() {
         },
         confirmButton = {
           TextButton(onClick = { chooserVisible = false }) {
-            Text("閉じる")
+            Text(stringResource(R.string.act_close))
           }
         }
       )
