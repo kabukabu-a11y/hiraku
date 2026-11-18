@@ -26,6 +26,7 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
+import arun.com.chromer.R
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
@@ -107,7 +108,7 @@ class OverlayService : Service() {
     windowManager = getSystemService(WindowManager::class.java)
     val channel = NotificationChannel(
       CHANNEL_ID,
-      "オーバーレイ表示",
+      getString(R.string.overlay_channel),
       NotificationManager.IMPORTANCE_LOW
     )
     getSystemService(NotificationManager::class.java)?.createNotificationChannel(channel)
@@ -159,7 +160,7 @@ class OverlayService : Service() {
     )
     val notification = Notification.Builder(this, CHANNEL_ID)
       .setSmallIcon(android.R.drawable.ic_menu_view)
-      .setContentTitle("オーバーレイ表示中")
+      .setContentTitle(getString(R.string.overlay_showing))
       .setContentText(url)
       .setOngoing(true)
       .setContentIntent(contentIntent)
@@ -534,7 +535,7 @@ class OverlayService : Service() {
     updateShield()
     Toast.makeText(
       this,
-      if (adBlockEnabled) "広告ブロック：オン" else "広告ブロック：オフ",
+      if (adBlockEnabled) getString(R.string.adblock_on) else getString(R.string.adblock_off),
       Toast.LENGTH_SHORT
     ).show()
     webView?.reload()
@@ -578,34 +579,34 @@ class OverlayService : Service() {
   private fun showMenu(anchor: View) {
     val popup = PopupMenu(this, anchor)
     val menu = popup.menu
-    val forwardItem = menu.add(0, MENU_FORWARD, 0, "進む")
+    val forwardItem = menu.add(0, MENU_FORWARD, 0, getString(R.string.act_forward))
     forwardItem.isEnabled = webView?.canGoForward() == true
-    menu.add(0, MENU_OPEN_PRIMARY, 1, "選んだブラウザで開く")
+    menu.add(0, MENU_OPEN_PRIMARY, 1, getString(R.string.overlay_open_primary))
     menu.add(
       0,
       MENU_DESKTOP,
       2,
-      if (desktopMode) "✓ デスクトップサイト" else "デスクトップサイト"
+      if (desktopMode) "✓ " + getString(R.string.site_desktop) else getString(R.string.site_desktop)
     )
     menu.add(
       0,
       MENU_ADBLOCK,
       3,
-      if (adBlockEnabled) "✓ 広告ブロック" else "広告ブロック"
+      if (adBlockEnabled) "✓ " + getString(R.string.adblock_title) else getString(R.string.adblock_title)
     )
-    menu.add(0, MENU_MINIMIZE, 4, "最小化")
-    menu.add(0, MENU_FULLSCREEN, 5, "アプリ内で開く（全画面）")
-    val sub = menu.addSubMenu(0, MENU_OTHER_METHODS, 6, "別の方法で開く")
+    menu.add(0, MENU_MINIMIZE, 4, getString(R.string.overlay_minimize))
+    menu.add(0, MENU_FULLSCREEN, 5, getString(R.string.overlay_open_in_app))
+    val sub = menu.addSubMenu(0, MENU_OTHER_METHODS, 6, getString(R.string.menu_other_methods))
     // Same customized list as the chooser screens, minus the methods
     // that make no sense from inside the overlay itself.
     val methods = LinkPreferences.getChooserMethods(this)
       .filter { it != OpenMethod.STAY_OVERLAY && it != OpenMethod.CANCEL }
     for ((index, method) in methods.withIndex()) {
-      sub.add(1, MENU_METHOD_BASE + index, index, method.label)
+      sub.add(1, MENU_METHOD_BASE + index, index, getString(method.labelRes))
     }
-    menu.add(0, MENU_COPY, 7, "リンクをコピー")
-    menu.add(0, MENU_SHARE, 8, "共有")
-    menu.add(0, MENU_SETTINGS, 9, "Hiraku の設定")
+    menu.add(0, MENU_COPY, 7, getString(R.string.menu_copy_link))
+    menu.add(0, MENU_SHARE, 8, getString(R.string.act_share))
+    menu.add(0, MENU_SETTINGS, 9, getString(R.string.overlay_settings))
 
     popup.setOnMenuItemClickListener { item: MenuItem ->
       when {
@@ -668,7 +669,7 @@ class OverlayService : Service() {
           try {
             val clipboard = getSystemService(CLIPBOARD_SERVICE) as ClipboardManager
             clipboard.setPrimaryClip(ClipData.newPlainText("URL", currentUrl))
-            Toast.makeText(this, "リンクをコピーしました", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, getString(R.string.link_copied), Toast.LENGTH_SHORT).show()
           } catch (_: Exception) {
           }
           true
