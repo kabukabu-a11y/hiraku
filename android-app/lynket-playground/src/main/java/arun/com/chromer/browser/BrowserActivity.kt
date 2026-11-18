@@ -181,6 +181,9 @@ class BrowserActivity : ComponentActivity() {
     val previewEnabled = remember { LinkPreferences.isPreviewEnabled(context) }
     val desktopUserAgent = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
 
+    val adBlockOnText = stringResource(R.string.adblock_on)
+    val adBlockOffText = stringResource(R.string.adblock_off)
+
     val barContent: @Composable androidx.compose.foundation.layout.RowScope.() -> Unit = {
         IconButton(onClick = { finish() }) {
           Icon(
@@ -209,7 +212,7 @@ class BrowserActivity : ComponentActivity() {
             LinkPreferences.setAdBlockEnabled(context, newValue)
             Toast.makeText(
               context,
-              if (newValue) stringResource(R.string.adblock_on) else stringResource(R.string.adblock_off),
+              if (newValue) adBlockOnText else adBlockOffText,
               Toast.LENGTH_SHORT
             ).show()
             webView?.reload()
