@@ -37,6 +37,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.OnBackPressedCallback
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -49,8 +50,11 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.ArrowForward
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.BottomAppBar
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -115,8 +119,7 @@ class BrowserActivity : ComponentActivity() {
     val mode = LinkPreferences.getMode(this)
     if (!forceInApp) {
       if (mode == OpenMode.PROVIDER) {
-        val pkg = LinkPreferences.getProviderPackage(this)
-          ?: CustomTabProviders.getSystemDefaultProvider(this)
+        val pkg = CustomTabProviders.resolveProvider(this)
         if (pkg != null && CustomTabProviders.launchCustomTab(this, initialUrl, pkg)) {
           finish()
           return
@@ -253,55 +256,31 @@ class BrowserActivity : ComponentActivity() {
     var progress by remember { mutableIntStateOf(0) }
     var canGoBack by remember { mutableStateOf(false) }
     var canGoForward by remember { mutableStateOf(false) }
+    var menuExpanded by remember { mutableStateOf(false) }
 
     Scaffold(
-      topBar = {
-        TopAppBar(
-          title = {
-            Column {
-              Text(
-                text = pageTitle?.takeIf { it.isNotBlank() } ?: currentUrl,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-              )
-              Text(
-                text = currentUrl,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-              )
-            }
-          },
-          navigationIcon = {
-            IconButton(onClick = { finish() }) {
-              Icon(
-                imageVector = Icons.Filled.Close,
-                contentDescription = "Close"
-              )
-            }
-          },
-          actions = {
-            IconButton(
-              onClick = {
-                val viewIntent = Intent(Intent.ACTION_VIEW, Uri.parse(currentUrl))
-                val chooser = Intent.createChooser(viewIntent, null)
-                try {
-                  startActivity(chooser)
-                } catch (_: Exception) {
-                }
-              }
-            ) {
-              Icon(
-                imageVector = OpenInNewIcon,
-                contentDescription = "Open in external browser"
-              )
-            }
-          }
-        )
-      },
       bottomBar = {
         BottomAppBar {
+          IconButton(onClick = { finish() }) {
+            Icon(
+              imageVector = Icons.Filled.Close,
+              contentDescription = "Close"
+            )
+          }
+          Column(modifier = Modifier.weight(1f)) {
+            Text(
+              text = pageTitle?.takeIf { it.isNotBlank() } ?: currentUrl,
+              maxLines = 1,
+              overflow = TextOverflow.Ellipsis
+            )
+            Text(
+              text = currentUrl,
+              style = MaterialTheme.typography.bodySmall,
+              color = MaterialTheme.colorScheme.onSurfaceVariant,
+              maxLines = 1,
+              overflow = TextOverflow.Ellipsis
+            )
+          }
           IconButton(
             onClick = { webView?.goBack() },
             enabled = canGoBack
@@ -326,20 +305,48 @@ class BrowserActivity : ComponentActivity() {
               contentDescription = "Reload"
             )
           }
-          Spacer(modifier = Modifier.weight(1f))
-          TextButton(onClick = {
-            val currentUrl = webView?.url ?: initialUrl
-            context.startActivity(ArticleActivity.createIntent(context, currentUrl))
-          }) {
-            Text("記事")
-          }
-          TextButton(onClick = {
-            if (!OverlayService.open(context, currentUrl)) {
-              Toast.makeText(context, "オーバーレイ表示には「他のアプリの上に重ねて表示」の許可が必要です", Toast.LENGTH_LONG).show()
-              try { context.startActivity(OverlayService.createPermissionIntent(context)) } catch (_: Exception) { }
+          Box {
+            IconButton(onClick = { menuExpanded = true }) {
+              Icon(
+                imageVector = Icons.Filled.MoreVert,
+                contentDescription = "Menu"
+              )
             }
-          }) {
-            Text(text = "オーバーレイ")
+            DropdownMenu(
+              expanded = menuExpanded,
+              onDismissRequest = { menuExpanded = false }
+            ) {
+              DropdownMenuItem(
+                text = { Text("記事モード") },
+                onClick = {
+                  menuExpanded = false
+                  val target = webView?.url ?: initialUrl
+                  context.startActivity(ArticleActivity.createIntent(context, target))
+                }
+              )
+              DropdownMenuItem(
+                text = { Text("オーバーレイ表示") },
+                onClick = {
+                  menuExpanded = false
+                  if (!OverlayService.open(context, currentUrl)) {
+                    Toast.makeText(context, "オーバーレイ表示には「他のアプリの上に重ねて表示」の許可が必要です", Toast.LENGTH_LONG).show()
+                    try { context.startActivity(OverlayService.createPermissionIntent(context)) } catch (_: Exception) { }
+                  }
+                }
+              )
+              DropdownMenuItem(
+                text = { Text("外部ブラウザで開く") },
+                onClick = {
+                  menuExpanded = false
+                  val viewIntent = Intent(Intent.ACTION_VIEW, Uri.parse(currentUrl))
+                  val chooser = Intent.createChooser(viewIntent, null)
+                  try {
+                    startActivity(chooser)
+                  } catch (_: Exception) {
+                  }
+                }
+              )
+            }
           }
         }
       }
