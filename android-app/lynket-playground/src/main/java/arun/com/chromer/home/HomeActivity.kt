@@ -179,6 +179,14 @@ private fun HomeContent(
           mode = OpenMode.IN_APP
         }
       )
+      LinkOptionRow(
+        label = "オーバーレイ表示",
+        selected = mode == OpenMode.OVERLAY,
+        onSelect = {
+          LinkPreferences.setMode(context, OpenMode.OVERLAY)
+          mode = OpenMode.OVERLAY
+        }
+      )
     }
     Box(
       modifier = Modifier
@@ -230,3 +238,4 @@ fun ListItems(
     }
   }
 }
+
