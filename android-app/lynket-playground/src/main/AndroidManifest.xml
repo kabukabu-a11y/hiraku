@@ -69,6 +69,8 @@
         <data android:scheme="https" />
       </intent-filter>
     </activity>
+    <activity android:name=".tabs.TabsActivity" android:exported="false" />
+    <activity android:name=".history.HistoryActivity" android:exported="false" />
     <service
       android:name=".overlay.OverlayService"
       android:exported="false"
