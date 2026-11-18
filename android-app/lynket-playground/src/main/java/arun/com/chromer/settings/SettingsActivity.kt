@@ -55,6 +55,8 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import arun.com.chromer.R
+import androidx.compose.ui.res.stringResource
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -101,10 +103,10 @@ private fun SettingsScreen(onBack: () -> Unit) {
   Scaffold(
     topBar = {
       TopAppBar(
-        title = { Text("設定") },
+        title = { Text(stringResource(R.string.settings_title)) },
         navigationIcon = {
           IconButton(onClick = onBack) {
-            Icon(Icons.Filled.ArrowBack, contentDescription = "戻る")
+            Icon(Icons.Filled.ArrowBack, contentDescription = stringResource(R.string.act_back))
           }
         }
       )
@@ -118,13 +120,13 @@ private fun SettingsScreen(onBack: () -> Unit) {
         .padding(16.dp),
       verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-      SettingsCard(title = "表示") {
+      SettingsCard(title = stringResource(R.string.settings_display)) {
         Text(
-          text = "バーの位置",
+          text = stringResource(R.string.settings_bar_position),
           style = MaterialTheme.typography.bodyLarge
         )
         RadioRow(
-          label = "下",
+          label = stringResource(R.string.settings_bar_bottom),
           selected = !barOnTop,
           onSelect = {
             LinkPreferences.setBarOnTop(context, false)
@@ -132,7 +134,7 @@ private fun SettingsScreen(onBack: () -> Unit) {
           }
         )
         RadioRow(
-          label = "上",
+          label = stringResource(R.string.settings_bar_top),
           selected = barOnTop,
           onSelect = {
             LinkPreferences.setBarOnTop(context, true)
@@ -140,8 +142,8 @@ private fun SettingsScreen(onBack: () -> Unit) {
           }
         )
         SwitchRow(
-          title = "周りのぼかし",
-          description = "重ねて表示のとき、後ろの画面をぼかします",
+          title = stringResource(R.string.settings_blur),
+          description = stringResource(R.string.settings_blur_desc),
           checked = blurEnabled,
           onCheckedChange = {
             LinkPreferences.setOverlayBlurEnabled(context, it)
@@ -149,8 +151,8 @@ private fun SettingsScreen(onBack: () -> Unit) {
           }
         )
         SwitchRow(
-          title = "下スクロールでバーを隠す",
-          description = "アプリ内ブラウザで、ページを下にスクロールするとバーが隠れます",
+          title = stringResource(R.string.settings_hide_bar),
+          description = stringResource(R.string.settings_hide_bar_desc),
           checked = hideBar,
           onCheckedChange = {
             LinkPreferences.setHideBarOnScroll(context, it)
@@ -159,10 +161,10 @@ private fun SettingsScreen(onBack: () -> Unit) {
         )
       }
 
-      SettingsCard(title = "ブラウジング") {
+      SettingsCard(title = stringResource(R.string.settings_browsing)) {
         SwitchRow(
-          title = "広告ブロック",
-          description = "広告・トラッキングのドメインへの通信を止めます（pgl.yoyo.org等のオープンソースのリストを使用）。バーや︙メニューからも切り替えできます",
+          title = stringResource(R.string.adblock_title),
+          description = stringResource(R.string.settings_adblock_desc),
           checked = adBlock,
           onCheckedChange = {
             LinkPreferences.setAdBlockEnabled(context, it)
@@ -170,8 +172,8 @@ private fun SettingsScreen(onBack: () -> Unit) {
           }
         )
         SwitchRow(
-          title = "プレビュー（チラ見せ）",
-          description = "バブルの長押しや開き方を選ぶ画面で、ページのプレビューを表示します",
+          title = stringResource(R.string.settings_preview),
+          description = stringResource(R.string.settings_preview_desc),
           checked = preview,
           onCheckedChange = {
             LinkPreferences.setPreviewEnabled(context, it)
@@ -180,9 +182,9 @@ private fun SettingsScreen(onBack: () -> Unit) {
         )
       }
 
-      SettingsCard(title = "選択画面") {
+      SettingsCard(title = stringResource(R.string.settings_chooser)) {
         Text(
-          text = "「開くたびに選ぶ」の画面や「別の方法で開く」に出る項目の順番と表示を変えられます",
+          text = stringResource(R.string.settings_chooser_desc),
           style = MaterialTheme.typography.bodySmall,
           color = MaterialTheme.colorScheme.onSurfaceVariant
         )
@@ -193,7 +195,7 @@ private fun SettingsScreen(onBack: () -> Unit) {
             modifier = Modifier.fillMaxWidth()
           ) {
             Text(
-              text = method.label,
+              text = stringResource(method.labelRes),
               modifier = Modifier.weight(1f),
               style = MaterialTheme.typography.bodyMedium
             )
@@ -234,10 +236,10 @@ private fun SettingsScreen(onBack: () -> Unit) {
         }
       }
 
-      SettingsCard(title = "言語") {
+      SettingsCard(title = stringResource(R.string.settings_language)) {
         val options = listOf(
-          "system" to "システム既定",
-          "ja" to "日本語",
+          "system" to stringResource(R.string.lang_system),
+          "ja" to stringResource(R.string.lang_ja),
           "en" to "English"
         )
         for ((value, label) in options) {
@@ -252,15 +254,15 @@ private fun SettingsScreen(onBack: () -> Unit) {
           )
         }
         Text(
-          text = "Android 13以降で、アプリの表示言語を端末とは別に設定できます",
+          text = stringResource(R.string.settings_language_desc),
           style = MaterialTheme.typography.bodySmall,
           color = MaterialTheme.colorScheme.onSurfaceVariant
         )
       }
 
-      SettingsCard(title = "通知") {
+      SettingsCard(title = stringResource(R.string.settings_notifications)) {
         Text(
-          text = "バブルやオーバーレイ表示中は、状態を知らせる通知を表示します。通知が出ない場合はこちらから確認してください",
+          text = stringResource(R.string.settings_notifications_desc),
           style = MaterialTheme.typography.bodyMedium,
           color = MaterialTheme.colorScheme.onSurfaceVariant
         )
@@ -284,19 +286,19 @@ private fun SettingsScreen(onBack: () -> Unit) {
             }
           }
         ) {
-          Text("通知設定を開く")
+          Text(stringResource(R.string.settings_open_notification_settings))
         }
       }
 
-      SettingsCard(title = "データ") {
+      SettingsCard(title = stringResource(R.string.settings_data)) {
         OutlinedButton(
           onClick = {
             HistoryStore.clear(context)
             TabStore.clear(context)
-            Toast.makeText(context, "履歴とタブを消去しました", Toast.LENGTH_SHORT).show()
+            Toast.makeText(context, context.getString(R.string.settings_data_cleared), Toast.LENGTH_SHORT).show()
           }
         ) {
-          Text("履歴とタブをすべて消去")
+          Text(stringResource(R.string.settings_clear_data))
         }
       }
     }
