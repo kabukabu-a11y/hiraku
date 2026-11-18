@@ -32,6 +32,7 @@ import android.webkit.WebResourceRequest
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.Toast
+import java.net.URLEncoder
 import androidx.activity.ComponentActivity
 import androidx.activity.OnBackPressedCallback
 import androidx.activity.compose.setContent
@@ -74,6 +75,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import arun.com.chromer.article.ArticleActivity
 import arun.com.chromer.bubbles.BubbleService
 import arun.com.chromer.customtab.CustomTabProviders
 import arun.com.chromer.customtab.LinkPreferences
@@ -256,11 +258,20 @@ class BrowserActivity : ComponentActivity() {
       topBar = {
         TopAppBar(
           title = {
-            Text(
-              text = pageTitle?.takeIf { it.isNotBlank() } ?: currentUrl,
-              maxLines = 1,
-              overflow = TextOverflow.Ellipsis
-            )
+            Column {
+              Text(
+                text = pageTitle?.takeIf { it.isNotBlank() } ?: currentUrl,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+              )
+              Text(
+                text = currentUrl,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+              )
+            }
           },
           navigationIcon = {
             IconButton(onClick = { finish() }) {
@@ -316,6 +327,12 @@ class BrowserActivity : ComponentActivity() {
             )
           }
           Spacer(modifier = Modifier.weight(1f))
+          TextButton(onClick = {
+            val currentUrl = webView?.url ?: initialUrl
+            context.startActivity(ArticleActivity.createIntent(context, currentUrl))
+          }) {
+            Text("記事")
+          }
           TextButton(onClick = {
             if (!OverlayService.open(context, currentUrl)) {
               Toast.makeText(context, "オーバーレイ表示には「他のアプリの上に重ねて表示」の許可が必要です", Toast.LENGTH_LONG).show()
@@ -449,10 +466,12 @@ class BrowserActivity : ComponentActivity() {
     internal fun normalizeUrl(rawUrl: String): String {
       val trimmed = rawUrl.trim()
       if (trimmed.isEmpty()) return ""
-      return if (SCHEME_REGEX.matches(trimmed)) {
-        trimmed
-      } else {
+      if (SCHEME_REGEX.matches(trimmed)) return trimmed
+      val looksLikeHost = !trimmed.contains(" ") && trimmed.contains(".")
+      return if (looksLikeHost) {
         "https://$trimmed"
+      } else {
+        "https://www.google.com/search?q=" + URLEncoder.encode(trimmed, "UTF-8")
       }
     }
   }
