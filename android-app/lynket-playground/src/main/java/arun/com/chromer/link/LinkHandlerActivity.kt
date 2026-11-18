@@ -49,6 +49,8 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import arun.com.chromer.R
+import androidx.compose.ui.res.stringResource
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -172,7 +174,7 @@ class LinkHandlerActivity : ComponentActivity() {
           verticalArrangement = Arrangement.spacedBy(4.dp)
         ) {
           Text(
-            text = "開き方を選ぶ",
+            text = stringResource(R.string.chooser_title),
             style = MaterialTheme.typography.titleMedium
           )
           if (previewEnabled) {
@@ -226,7 +228,7 @@ class LinkHandlerActivity : ComponentActivity() {
                 .padding(vertical = 12.dp)
             ) {
               Text(
-                text = method.label,
+                text = stringResource(method.labelRes),
                 style = MaterialTheme.typography.bodyLarge
               )
             }
