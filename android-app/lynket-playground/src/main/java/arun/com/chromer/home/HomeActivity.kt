@@ -164,7 +164,7 @@ private fun HomeContent(
   Scaffold(
     topBar = {
       TopAppBar(
-        title = { Text(text = "Lynket") }
+        title = { Text(text = "Hiraku") }
       )
     }
   ) { innerPadding ->
