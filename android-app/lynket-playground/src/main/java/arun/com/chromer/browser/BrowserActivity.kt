@@ -21,6 +21,8 @@
 package arun.com.chromer.browser
 
 import android.annotation.SuppressLint
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
@@ -64,6 +66,11 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -270,9 +277,18 @@ class BrowserActivity : ComponentActivity() {
     var canGoBack by remember { mutableStateOf(false) }
     var canGoForward by remember { mutableStateOf(false) }
     var menuExpanded by remember { mutableStateOf(false) }
+    var barVisible by remember { mutableStateOf(true) }
+    var desktopMode by remember { mutableStateOf(false) }
+    val hideBarEnabled = remember { LinkPreferences.getHideBarOnScroll(context) }
+    val desktopUserAgent = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
 
     Scaffold(
       bottomBar = {
+        AnimatedVisibility(
+          visible = barVisible || !hideBarEnabled,
+          enter = expandVertically() + fadeIn(),
+          exit = shrinkVertically() + fadeOut()
+        ) {
         BottomAppBar {
           IconButton(onClick = { finish() }) {
             Icon(
@@ -359,8 +375,48 @@ class BrowserActivity : ComponentActivity() {
                   }
                 }
               )
+              DropdownMenuItem(
+                text = { Text(if (desktopMode) "モバイルサイトに切替" else "デスクトップサイト") },
+                onClick = {
+                  menuExpanded = false
+                  val newDesktopMode = !desktopMode
+                  desktopMode = newDesktopMode
+                  webView?.let { view ->
+                    view.settings.userAgentString = if (newDesktopMode) desktopUserAgent else null
+                    view.settings.useWideViewPort = newDesktopMode
+                    view.reload()
+                  }
+                }
+              )
+              DropdownMenuItem(
+                text = { Text("共有") },
+                onClick = {
+                  menuExpanded = false
+                  val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                    type = "text/plain"
+                    putExtra(Intent.EXTRA_TEXT, currentUrl)
+                  }
+                  try {
+                    startActivity(Intent.createChooser(shareIntent, null))
+                  } catch (_: Exception) {
+                  }
+                }
+              )
+              DropdownMenuItem(
+                text = { Text("リンクをコピー") },
+                onClick = {
+                  menuExpanded = false
+                  try {
+                    val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                    clipboard.setPrimaryClip(ClipData.newPlainText("URL", currentUrl))
+                    Toast.makeText(context, "リンクをコピーしました", Toast.LENGTH_SHORT).show()
+                  } catch (_: Exception) {
+                  }
+                }
+              )
             }
           }
+        }
         }
       }
     ) { innerPadding ->
@@ -448,6 +504,15 @@ class BrowserActivity : ComponentActivity() {
 
                 override fun onReceivedTitle(view: WebView?, title: String?) {
                   pageTitle = title?.takeIf { it.isNotBlank() }
+                }
+              }
+              setOnScrollChangeListener { _, _, scrollY, _, oldScrollY ->
+                if (hideBarEnabled) {
+                  if (scrollY > oldScrollY + 6 && scrollY > 100) {
+                    barVisible = false
+                  } else if (scrollY < oldScrollY - 6) {
+                    barVisible = true
+                  }
                 }
               }
               this@BrowserActivity.webView = this
