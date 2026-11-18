@@ -116,6 +116,19 @@ class BrowserActivity : ComponentActivity() {
     }
 
     val forceInApp = intent.getBooleanExtra(EXTRA_FORCE_IN_APP, false)
+
+    // From the Custom Tab menu: reopen this page in the secondary browser.
+    // If that is impossible, fall through and show the page in-app.
+    if (intent.getBooleanExtra(EXTRA_OPEN_SECONDARY, false)) {
+      val secondary = LinkPreferences.getSecondaryProviderPackage(this)
+      if (secondary != null && secondary != packageName &&
+        CustomTabProviders.launchCustomTab(this, initialUrl, secondary)
+      ) {
+        finish()
+        return
+      }
+    }
+
     val mode = LinkPreferences.getMode(this)
     if (!forceInApp) {
       if (mode == OpenMode.PROVIDER) {
@@ -458,6 +471,7 @@ class BrowserActivity : ComponentActivity() {
   companion object {
     const val EXTRA_URL = "arun.com.chromer.extra.URL"
     const val EXTRA_FORCE_IN_APP = "arun.com.chromer.extra.FORCE_IN_APP"
+    const val EXTRA_OPEN_SECONDARY = "arun.com.chromer.extra.OPEN_SECONDARY"
 
     private val SCHEME_REGEX = Regex("^[a-zA-Z][a-zA-Z0-9+.-]*://.*")
 
@@ -469,6 +483,12 @@ class BrowserActivity : ComponentActivity() {
 
     fun createDirectIntent(context: Context, url: String): Intent =
       createIntent(context, url).apply { putExtra(EXTRA_FORCE_IN_APP, true) }
+
+    fun createSecondaryIntent(context: Context, url: String): Intent =
+      createIntent(context, url).apply {
+        putExtra(EXTRA_OPEN_SECONDARY, true)
+        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+      }
 
     internal fun normalizeUrl(rawUrl: String): String {
       val trimmed = rawUrl.trim()
