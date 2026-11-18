@@ -35,13 +35,16 @@ import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.net.Uri
 import android.os.Build
+import android.os.Handler
 import android.os.IBinder
+import android.os.Looper
 import android.view.Gravity
 import android.view.MotionEvent
 import android.view.View
 import android.view.WindowManager
 import android.widget.TextView
 import arun.com.chromer.browser.BrowserActivity
+import arun.com.chromer.customtab.LinkPreferences
 import arun.com.chromer.home.HomeActivity
 import arun.com.chromer.overlay.OverlayService
 import kotlin.math.abs
@@ -156,6 +159,14 @@ class BubbleService : Service() {
     var rawDownX = 0f
     var rawDownY = 0f
     var moved = false
+    var longPressed = false
+    val handler = Handler(Looper.getMainLooper())
+    val longPressRunnable = Runnable {
+      if (!moved) {
+        longPressed = true
+        openPreview(item)
+      }
+    }
 
     item.view.setOnTouchListener { _, event ->
       val size = dp(BUBBLE_SIZE_DP)
@@ -166,6 +177,8 @@ class BubbleService : Service() {
           rawDownX = event.rawX
           rawDownY = event.rawY
           moved = false
+          longPressed = false
+          handler.postDelayed(longPressRunnable, LONG_PRESS_MS)
           true
         }
         MotionEvent.ACTION_MOVE -> {
@@ -173,6 +186,7 @@ class BubbleService : Service() {
           val dy = (event.rawY - rawDownY).toInt()
           if (abs(dx) > dp(6) || abs(dy) > dp(6)) {
             moved = true
+            handler.removeCallbacks(longPressRunnable)
           }
           item.params.x = downX + dx
           item.params.y = downY + dy
@@ -186,8 +200,11 @@ class BubbleService : Service() {
           true
         }
         MotionEvent.ACTION_UP -> {
+          handler.removeCallbacks(longPressRunnable)
           hideTrash()
-          if (!moved) {
+          if (longPressed) {
+            // Preview already opened; keep the bubble where it is.
+          } else if (!moved) {
             openBubble(item)
           } else {
             val metrics = resources.displayMetrics
@@ -214,6 +231,7 @@ class BubbleService : Service() {
           true
         }
         MotionEvent.ACTION_CANCEL -> {
+          handler.removeCallbacks(longPressRunnable)
           hideTrash()
           true
         }
@@ -277,9 +295,26 @@ class BubbleService : Service() {
 
   private fun openBubble(item: BubbleItem) {
     removeBubble(item)
+    // Tapping a bubble opens the overlay window directly, staying on
+    // top of the current app instead of switching to a full activity.
+    if (OverlayService.open(this, item.url)) {
+      return
+    }
     val intent = BrowserActivity.createDirectIntent(this, item.url)
       .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
     startActivity(intent)
+  }
+
+  private fun openPreview(item: BubbleItem) {
+    // Long press: peek at the page in a short overlay window. The
+    // bubble stays, so closing the preview returns to just the bubble.
+    if (!LinkPreferences.isPreviewEnabled(this)) {
+      openBubble(item)
+      return
+    }
+    if (!OverlayService.open(this, item.url, peek = true)) {
+      openBubble(item)
+    }
   }
 
   private fun removeBubble(item: BubbleItem) {
@@ -353,6 +388,8 @@ class BubbleService : Service() {
     const val EXTRA_URL = "arun.com.chromer.bubbles.EXTRA_URL"
     private const val ACTION_ADD = "arun.com.chromer.bubbles.ACTION_ADD"
     private const val ACTION_CLEAR = "arun.com.chromer.bubbles.ACTION_CLEAR"
+
+    private const val LONG_PRESS_MS = 550L
 
     private const val MAX_BUBBLES = 5
     private const val BUBBLE_SIZE_DP = 56
