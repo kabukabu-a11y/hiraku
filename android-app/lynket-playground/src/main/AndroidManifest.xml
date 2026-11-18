@@ -20,6 +20,9 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
   <uses-permission android:name="android.permission.INTERNET" />
+  <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+  <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+  <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
 
   <queries>
     <intent>
@@ -66,5 +69,13 @@
         <data android:scheme="https" />
       </intent-filter>
     </activity>
+    <service
+      android:name=".overlay.OverlayService"
+      android:exported="false"
+      android:foregroundServiceType="specialUse">
+      <property
+        android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+        android:value="Floating overlay browser window displayed over other apps at the user request" />
+    </service>
   </application>
 </manifest>
