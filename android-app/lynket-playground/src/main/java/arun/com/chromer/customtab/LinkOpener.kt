@@ -246,6 +246,56 @@ object LinkPreferences {
     prefs(context).edit().putBoolean(KEY_ADBLOCK_ENABLED, enabled).apply()
   }
 
+  // ----- v2.0.1: chooser screen customization -----
+
+  private const val KEY_CHOOSER_ORDER = "chooser_order"
+  private const val KEY_CHOOSER_HIDDEN = "chooser_hidden"
+
+  /** All concrete methods in the user's chosen order. */
+  fun getChooserOrder(context: Context): List<OpenMethod> {
+    val all = OpenMethod.CHOICES
+    val raw = prefs(context).getString(KEY_CHOOSER_ORDER, null)
+    if (raw.isNullOrBlank()) return all
+    val stored = raw.split(",")
+      .mapNotNull { OpenMethod.fromName(it.trim()) }
+      .filter { it in all }
+      .distinct()
+    return stored + all.filter { it !in stored }
+  }
+
+  fun setChooserOrder(context: Context, methods: List<OpenMethod>) {
+    prefs(context).edit()
+      .putString(KEY_CHOOSER_ORDER, methods.joinToString(",") { it.name })
+      .apply()
+  }
+
+  fun getHiddenMethods(context: Context): Set<OpenMethod> {
+    val raw = prefs(context).getString(KEY_CHOOSER_HIDDEN, null)
+    if (raw.isNullOrBlank()) return emptySet()
+    return raw.split(",")
+      .mapNotNull { OpenMethod.fromName(it.trim()) }
+      .toSet()
+  }
+
+  fun setMethodHidden(context: Context, method: OpenMethod, hidden: Boolean) {
+    val current = getHiddenMethods(context).toMutableSet()
+    if (hidden) {
+      current.add(method)
+    } else {
+      current.remove(method)
+    }
+    prefs(context).edit()
+      .putString(KEY_CHOOSER_HIDDEN, current.joinToString(",") { it.name })
+      .apply()
+  }
+
+  /** Methods shown in chooser UIs: user order, hidden ones removed. */
+  fun getChooserMethods(context: Context): List<OpenMethod> {
+    val hidden = getHiddenMethods(context)
+    val visible = getChooserOrder(context).filter { it !in hidden }
+    return visible.ifEmpty { listOf(OpenMethod.STAY_OVERLAY) }
+  }
+
   /** "system", "ja" or "en". */
   fun getLanguage(context: Context): String {
     return prefs(context).getString(KEY_LANGUAGE, "system") ?: "system"
