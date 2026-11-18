@@ -24,6 +24,7 @@ import android.app.Activity
 import android.content.Context
 import android.content.Intent
 import android.widget.Toast
+import arun.com.chromer.R
 import arun.com.chromer.browser.BrowserActivity
 import arun.com.chromer.bubbles.BubbleService
 import arun.com.chromer.overlay.OverlayService
@@ -35,8 +36,8 @@ import arun.com.chromer.overlay.OverlayService
  */
 object LinkDispatcher {
 
-  private const val OVERLAY_PERMISSION_MESSAGE =
-    "重ねて表示には「他のアプリの上に重ねて表示」の許可が必要です"
+  private fun overlayPermissionMessage(context: Context): String =
+    context.getString(R.string.overlay_permission_required)
 
   fun open(activity: Activity, url: String, method: OpenMethod) {
     when (method) {
@@ -132,7 +133,7 @@ object LinkDispatcher {
     if (OverlayService.open(context, url, peek)) {
       return
     }
-    Toast.makeText(context, OVERLAY_PERMISSION_MESSAGE, Toast.LENGTH_LONG).show()
+    Toast.makeText(context, overlayPermissionMessage(context), Toast.LENGTH_LONG).show()
     try {
       context.startActivity(
         OverlayService.createPermissionIntent(context)
@@ -147,7 +148,7 @@ object LinkDispatcher {
     if (BubbleService.open(context, url)) {
       return
     }
-    Toast.makeText(context, OVERLAY_PERMISSION_MESSAGE, Toast.LENGTH_LONG).show()
+    Toast.makeText(context, overlayPermissionMessage(context), Toast.LENGTH_LONG).show()
     openInApp(context, url)
   }
 
