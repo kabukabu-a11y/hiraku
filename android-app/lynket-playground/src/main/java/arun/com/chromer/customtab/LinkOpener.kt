@@ -115,7 +115,30 @@ object CustomTabProviders {
     return CustomTabsClient.getPackageName(context, null)
   }
 
+  /**
+   * Resolves which package should provide the Custom Tab, in order:
+   * the user's stored choice, the first detected Custom Tabs browser,
+   * then the system default. Never returns this app's own package:
+   * when Hiraku itself is the system default browser, the system
+   * default lookup is useless (and can return null), so a real
+   * browser must be picked from the detected list instead.
+   */
+  fun resolveProvider(context: Context): String? {
+    val stored = LinkPreferences.getProviderPackage(context)
+    if (stored != null && stored != context.packageName) {
+      return stored
+    }
+    val found = findProviders(context)
+    if (found.isNotEmpty()) {
+      return found[0].packageName
+    }
+    return getSystemDefaultProvider(context)?.takeIf { it != context.packageName }
+  }
+
   fun launchCustomTab(activity: Activity, url: String, providerPackage: String?): Boolean {
+    if (providerPackage != null && providerPackage == activity.packageName) {
+      return false
+    }
     val customTabsIntent = CustomTabsIntent.Builder()
       .setShowTitle(true)
       .build()
