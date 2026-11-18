@@ -21,12 +21,15 @@
 package arun.com.chromer.home
 
 import android.content.Intent
+import android.graphics.Bitmap
+import android.graphics.Canvas
 import android.os.Bundle
 import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -36,6 +39,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
@@ -49,6 +53,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.Icon
@@ -63,6 +68,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.text.input.ImeAction
@@ -138,6 +144,7 @@ private fun HomeContent(
   var mode by remember { mutableStateOf(LinkPreferences.getMode(context)) }
   var providerPackage by remember { mutableStateOf(LinkPreferences.getProviderPackage(context)) }
   var secondaryPackage by remember { mutableStateOf(LinkPreferences.getSecondaryProviderPackage(context)) }
+  var hideBarOnScroll by remember { mutableStateOf(LinkPreferences.getHideBarOnScroll(context)) }
   var isDefault by remember { mutableStateOf(DefaultBrowser.isDefaultBrowser(context)) }
   val versionName = remember {
     try {
@@ -310,6 +317,7 @@ private fun HomeContent(
           providers.forEach { provider ->
             LinkOptionRow(
               label = provider.label,
+              iconPackage = provider.packageName,
               selected = mode == OpenMode.PROVIDER && providerPackage == provider.packageName,
               onSelect = {
                 LinkPreferences.setMode(context, OpenMode.PROVIDER)
@@ -383,10 +391,40 @@ private fun HomeContent(
           providers.forEach { provider ->
             LinkOptionRow(
               label = provider.label,
+              iconPackage = provider.packageName,
               selected = secondaryPackage == provider.packageName,
               onSelect = {
                 LinkPreferences.setSecondaryProviderPackage(context, provider.packageName)
                 secondaryPackage = provider.packageName
+              }
+            )
+          }
+        }
+      }
+
+      Card(modifier = Modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.padding(16.dp)) {
+          Text(
+            text = "アプリ内ブラウザ",
+            style = MaterialTheme.typography.titleMedium
+          )
+          Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.fillMaxWidth()
+          ) {
+            Column(modifier = Modifier.weight(1f)) {
+              Text(text = "下スクロールでバーを隠す")
+              Text(
+                text = "ページを下にスクロールすると下のバーが隠れて、画面を広く使えます",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+              )
+            }
+            Switch(
+              checked = hideBarOnScroll,
+              onCheckedChange = {
+                LinkPreferences.setHideBarOnScroll(context, it)
+                hideBarOnScroll = it
               }
             )
           }
@@ -436,8 +474,28 @@ private fun HomeContent(
 private fun LinkOptionRow(
   label: String,
   selected: Boolean,
-  onSelect: () -> Unit
+  onSelect: () -> Unit,
+  iconPackage: String? = null
 ) {
+  val context = LocalContext.current
+  val iconBitmap = remember(iconPackage) {
+    if (iconPackage == null) {
+      null
+    } else {
+      try {
+        val drawable = context.packageManager.getApplicationIcon(iconPackage)
+        val iconWidth = drawable.intrinsicWidth.coerceAtLeast(1)
+        val iconHeight = drawable.intrinsicHeight.coerceAtLeast(1)
+        val bitmap = Bitmap.createBitmap(iconWidth, iconHeight, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(bitmap)
+        drawable.setBounds(0, 0, iconWidth, iconHeight)
+        drawable.draw(canvas)
+        bitmap.asImageBitmap()
+      } catch (_: Exception) {
+        null
+      }
+    }
+  }
   Row(
     modifier = Modifier
       .fillMaxWidth()
@@ -448,6 +506,14 @@ private fun LinkOptionRow(
       selected = selected,
       onClick = onSelect
     )
+    if (iconBitmap != null) {
+      Image(
+        bitmap = iconBitmap,
+        contentDescription = null,
+        modifier = Modifier.size(28.dp)
+      )
+      Spacer(modifier = Modifier.width(8.dp))
+    }
     Text(text = label)
   }
 }
