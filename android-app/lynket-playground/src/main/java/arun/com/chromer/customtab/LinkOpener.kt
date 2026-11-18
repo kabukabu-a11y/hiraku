@@ -21,12 +21,16 @@
 package arun.com.chromer.customtab
 
 import android.app.Activity
+import android.app.PendingIntent
+import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.SharedPreferences
 import android.net.Uri
 import androidx.browser.customtabs.CustomTabsClient
 import androidx.browser.customtabs.CustomTabsIntent
+import arun.com.chromer.browser.BrowserActivity
+import arun.com.chromer.home.HomeActivity
 
 enum class OpenMode {
   IN_APP,
@@ -40,6 +44,7 @@ object LinkPreferences {
   private const val PREFS_NAME = "link_prefs"
   private const val KEY_OPEN_MODE = "open_mode"
   private const val KEY_PROVIDER_PACKAGE = "provider_package"
+  private const val KEY_SECONDARY_PROVIDER_PACKAGE = "secondary_provider_package"
 
   private fun prefs(context: Context): SharedPreferences {
     return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
@@ -68,6 +73,20 @@ object LinkPreferences {
         remove(KEY_PROVIDER_PACKAGE)
       } else {
         putString(KEY_PROVIDER_PACKAGE, packageName)
+      }
+    }.apply()
+  }
+
+  fun getSecondaryProviderPackage(context: Context): String? {
+    return prefs(context).getString(KEY_SECONDARY_PROVIDER_PACKAGE, null)
+  }
+
+  fun setSecondaryProviderPackage(context: Context, packageName: String?) {
+    prefs(context).edit().apply {
+      if (packageName == null) {
+        remove(KEY_SECONDARY_PROVIDER_PACKAGE)
+      } else {
+        putString(KEY_SECONDARY_PROVIDER_PACKAGE, packageName)
       }
     }.apply()
   }
@@ -149,13 +168,57 @@ object CustomTabProviders {
     return getSystemDefaultProvider(context)?.takeIf { it != context.packageName }
   }
 
+  private const val REQUEST_CODE_OPTIONS = 1001
+  private const val REQUEST_CODE_SECONDARY = 1002
+
   fun launchCustomTab(activity: Activity, url: String, providerPackage: String?): Boolean {
     if (providerPackage != null && providerPackage == activity.packageName) {
       return false
     }
-    val customTabsIntent = CustomTabsIntent.Builder()
+    val builder = CustomTabsIntent.Builder()
       .setShowTitle(true)
-      .build()
+
+    // Menu item: jump back to Hiraku's home (options) screen.
+    try {
+      val optionsIntent = Intent(activity, HomeActivity::class.java)
+        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+      val optionsPendingIntent = PendingIntent.getActivity(
+        activity,
+        REQUEST_CODE_OPTIONS,
+        optionsIntent,
+        PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+      )
+      builder.addMenuItem("Hiraku のオプション", optionsPendingIntent)
+    } catch (_: Exception) {
+    }
+
+    // Menu item: reopen the current page in the secondary browser.
+    // The browser fills in the current page URL as the intent data when
+    // the item is tapped, so the PendingIntent must stay mutable.
+    val secondary = LinkPreferences.getSecondaryProviderPackage(activity)
+    if (secondary != null && secondary != providerPackage && secondary != activity.packageName) {
+      try {
+        val secondaryIntent = Intent(activity, MenuActionReceiver::class.java)
+          .setAction(MenuActionReceiver.ACTION_OPEN_SECONDARY)
+        val secondaryPendingIntent = PendingIntent.getBroadcast(
+          activity,
+          REQUEST_CODE_SECONDARY,
+          secondaryIntent,
+          PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE
+        )
+        val secondaryLabel = try {
+          activity.packageManager
+            .getApplicationLabel(activity.packageManager.getApplicationInfo(secondary, 0))
+            .toString()
+        } catch (_: Exception) {
+          secondary
+        }
+        builder.addMenuItem("$secondaryLabel で開く", secondaryPendingIntent)
+      } catch (_: Exception) {
+      }
+    }
+
+    val customTabsIntent = builder.build()
     if (providerPackage != null) {
       customTabsIntent.intent.setPackage(providerPackage)
     }
@@ -165,6 +228,27 @@ object CustomTabProviders {
     } catch (_: Exception) {
       false
     }
+  }
+}
+
+/**
+ * Handles the Custom Tab menu item that reopens the current page in the
+ * secondary browser. The browser fills in the current page URL as the
+ * intent data when the menu item is tapped.
+ */
+class MenuActionReceiver : BroadcastReceiver() {
+  override fun onReceive(context: Context, intent: Intent) {
+    if (intent.action != ACTION_OPEN_SECONDARY) return
+    val url = intent.dataString
+    if (url.isNullOrBlank()) return
+    try {
+      context.startActivity(BrowserActivity.createSecondaryIntent(context, url))
+    } catch (_: Exception) {
+    }
+  }
+
+  companion object {
+    const val ACTION_OPEN_SECONDARY = "arun.com.chromer.action.OPEN_SECONDARY"
   }
 }
 
