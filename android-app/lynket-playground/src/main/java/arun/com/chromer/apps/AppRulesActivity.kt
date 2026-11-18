@@ -53,6 +53,8 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import arun.com.chromer.R
+import androidx.compose.ui.res.stringResource
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -116,10 +118,10 @@ private fun AppRulesScreen(onBack: () -> Unit) {
   Scaffold(
     topBar = {
       TopAppBar(
-        title = { Text("アプリごとの設定") },
+        title = { Text(stringResource(R.string.app_rules_title)) },
         navigationIcon = {
           IconButton(onClick = onBack) {
-            Icon(Icons.Filled.ArrowBack, contentDescription = "戻る")
+            Icon(Icons.Filled.ArrowBack, contentDescription = stringResource(R.string.act_back))
           }
         }
       )
@@ -133,7 +135,7 @@ private fun AppRulesScreen(onBack: () -> Unit) {
       OutlinedTextField(
         value = query,
         onValueChange = { query = it },
-        label = { Text("アプリを検索") },
+        label = { Text(stringResource(R.string.app_rules_search)) },
         leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) },
         singleLine = true,
         modifier = Modifier
@@ -141,7 +143,7 @@ private fun AppRulesScreen(onBack: () -> Unit) {
           .padding(16.dp)
       )
       Text(
-        text = "設定がないアプリは「標準（${defaultMethod.label}）」で開きます",
+        text = stringResource(R.string.app_rules_default_note, stringResource(defaultMethod.labelRes)),
         style = MaterialTheme.typography.bodySmall,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
         modifier = Modifier.padding(horizontal = 16.dp)
@@ -172,7 +174,7 @@ private fun AppRulesScreen(onBack: () -> Unit) {
                 overflow = TextOverflow.Ellipsis
               )
               Text(
-                text = rule?.label ?: "標準",
+                text = rule?.let { stringResource(it.labelRes) } ?: stringResource(R.string.app_rules_default_badge),
                 style = MaterialTheme.typography.bodySmall,
                 color = if (rule != null) {
                   MaterialTheme.colorScheme.primary
@@ -196,7 +198,7 @@ private fun AppRulesScreen(onBack: () -> Unit) {
       text = {
         Column {
           MethodChoiceRow(
-            label = "標準（${defaultMethod.label}）",
+            label = stringResource(R.string.app_rules_default_option, stringResource(defaultMethod.labelRes)),
             selected = current == null,
             onSelect = {
               LinkPreferences.setAppRule(context, app.packageName, null)
@@ -206,7 +208,7 @@ private fun AppRulesScreen(onBack: () -> Unit) {
           )
           for (method in OpenMethod.CHOICES) {
             MethodChoiceRow(
-              label = method.label,
+              label = stringResource(method.labelRes),
               selected = current == method,
               onSelect = {
                 LinkPreferences.setAppRule(context, app.packageName, method)
@@ -219,7 +221,7 @@ private fun AppRulesScreen(onBack: () -> Unit) {
       },
       confirmButton = {
         TextButton(onClick = { editingApp = null }) {
-          Text("閉じる")
+          Text(stringResource(R.string.act_close))
         }
       }
     )
