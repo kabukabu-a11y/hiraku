@@ -27,8 +27,10 @@ import android.content.Context
 import android.content.Intent
 import android.content.SharedPreferences
 import android.net.Uri
+import androidx.annotation.StringRes
 import androidx.browser.customtabs.CustomTabsClient
 import androidx.browser.customtabs.CustomTabsIntent
+import arun.com.chromer.R
 import arun.com.chromer.home.HomeActivity
 import arun.com.chromer.link.LinkHandlerActivity
 import org.json.JSONObject
@@ -38,17 +40,17 @@ import org.json.JSONObject
  * methods from the v2 concept; ASK is the extra "choose every time"
  * pseudo-method that shows the chooser UI instead of opening directly.
  */
-enum class OpenMethod(val label: String) {
-  CUSTOM_TAB_PRIMARY("選んだブラウザ（Custom Tab）"),
-  CUSTOM_TAB_SECONDARY("2つ目のブラウザ（Custom Tab）"),
-  NORMAL_PRIMARY("選んだブラウザ（通常）"),
-  NORMAL_SECONDARY("2つ目のブラウザ（通常）"),
-  CUSTOM_TAB_SYSTEM("システム標準（Custom Tab）"),
-  STAY_OVERLAY("アプリに留まる（重ねて表示）"),
-  BUBBLE("バブル"),
-  SHARE("共有"),
-  CANCEL("キャンセル"),
-  ASK("開くたびに選ぶ");
+enum class OpenMethod(@StringRes val labelRes: Int) {
+  CUSTOM_TAB_PRIMARY(R.string.method_custom_tab_primary),
+  CUSTOM_TAB_SECONDARY(R.string.method_custom_tab_secondary),
+  NORMAL_PRIMARY(R.string.method_normal_primary),
+  NORMAL_SECONDARY(R.string.method_normal_secondary),
+  CUSTOM_TAB_SYSTEM(R.string.method_custom_tab_system),
+  STAY_OVERLAY(R.string.method_stay_overlay),
+  BUBBLE(R.string.method_bubble),
+  SHARE(R.string.method_share),
+  CANCEL(R.string.method_cancel),
+  ASK(R.string.method_ask);
 
   companion object {
     /** The nine concrete methods, in the order the user defined them. */
@@ -402,7 +404,7 @@ object CustomTabProviders {
         optionsIntent,
         PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
       )
-      builder.addMenuItem("Hiraku のオプション", optionsPendingIntent)
+      builder.addMenuItem(activity.getString(R.string.ct_options), optionsPendingIntent)
     } catch (_: Exception) {
     }
 
@@ -427,7 +429,10 @@ object CustomTabProviders {
         } catch (_: Exception) {
           secondary
         }
-        builder.addMenuItem("$secondaryLabel で開く", secondaryPendingIntent)
+        builder.addMenuItem(
+          activity.getString(R.string.ct_open_in, secondaryLabel),
+          secondaryPendingIntent
+        )
       } catch (_: Exception) {
       }
     }
