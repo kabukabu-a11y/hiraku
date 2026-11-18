@@ -31,6 +31,7 @@ import android.os.Bundle
 import android.view.ViewGroup
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceRequest
+import android.webkit.WebResourceResponse
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.Toast
@@ -38,6 +39,12 @@ import java.net.URLEncoder
 import androidx.activity.ComponentActivity
 import androidx.activity.OnBackPressedCallback
 import androidx.activity.compose.setContent
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -45,15 +52,19 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.ArrowForward
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.BottomAppBar
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -66,20 +77,17 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.expandVertically
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.shrinkVertically
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.vector.path
 import androidx.compose.ui.platform.LocalContext
@@ -87,15 +95,19 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import arun.com.chromer.article.ArticleActivity
-import arun.com.chromer.bubbles.BubbleService
-import arun.com.chromer.customtab.CustomTabProviders
+import arun.com.chromer.customtab.LinkDispatcher
 import arun.com.chromer.customtab.LinkPreferences
-import arun.com.chromer.customtab.OpenMode
+import arun.com.chromer.customtab.OpenMethod
 import arun.com.chromer.history.HistoryStore
 import arun.com.chromer.overlay.OverlayService
 import arun.com.chromer.tabs.TabStore
 import arun.com.chromer.theme.LynketTheme
 
+/**
+ * The full-screen in-app browser. Link routing lives in
+ * LinkHandlerActivity; this activity only displays pages. It runs in
+ * its own task so Back at the root returns to the previous app.
+ */
 class BrowserActivity : ComponentActivity() {
 
   private var webView: WebView? = null
@@ -115,65 +127,15 @@ class BrowserActivity : ComponentActivity() {
     super.onCreate(savedInstanceState)
     onBackPressedDispatcher.addCallback(this, backPressedCallback)
 
-    val rawUrl = extractUrlFromIntent(intent)
-    val initialUrl = normalizeUrl(rawUrl.orEmpty())
+    val initialUrl = normalizeUrl(extractUrlFromIntent(intent).orEmpty())
     if (initialUrl.isEmpty()) {
       finish()
       return
     }
 
-    val forceInApp = intent.getBooleanExtra(EXTRA_FORCE_IN_APP, false)
-
-    // From the Custom Tab menu: reopen this page in the secondary browser.
-    // If that is impossible, fall through and show the page in-app.
-    if (intent.getBooleanExtra(EXTRA_OPEN_SECONDARY, false)) {
-      val secondary = LinkPreferences.getSecondaryProviderPackage(this)
-      if (secondary != null && secondary != packageName &&
-        CustomTabProviders.launchCustomTab(this, initialUrl, secondary)
-      ) {
-        finish()
-        return
-      }
-    }
-
-    val mode = LinkPreferences.getMode(this)
-    if (!forceInApp) {
-      if (mode == OpenMode.PROVIDER) {
-        val pkg = CustomTabProviders.resolveProvider(this)
-        if (pkg != null && CustomTabProviders.launchCustomTab(this, initialUrl, pkg)) {
-          finish()
-          return
-        }
-      }
-
-      if (mode == OpenMode.OVERLAY) {
-        if (OverlayService.open(this, initialUrl)) {
-          finish()
-          return
-        } else {
-          Toast.makeText(this, "オーバーレイ表示には「他のアプリの上に重ねて表示」の許可が必要です", Toast.LENGTH_LONG).show()
-          try { startActivity(OverlayService.createPermissionIntent(this)) } catch (_: Exception) { }
-        }
-      }
-
-      if (mode == OpenMode.WEB_HEAD) {
-        if (BubbleService.open(this, initialUrl)) {
-          finish()
-          return
-        } else {
-          Toast.makeText(this, "Web headsには「他のアプリの上に重ねて表示」の許可が必要です", Toast.LENGTH_LONG).show()
-          try { startActivity(OverlayService.createPermissionIntent(this)) } catch (_: Exception) { }
-        }
-      }
-    }
-
     setContent {
       LynketTheme {
-        if (mode == OpenMode.ASK && !forceInApp) {
-          ProviderPickerScreen(url = initialUrl)
-        } else {
-          BrowserScreen(initialUrl = initialUrl)
-        }
+        BrowserScreen(initialUrl = initialUrl)
       }
     }
   }
@@ -192,78 +154,7 @@ class BrowserActivity : ComponentActivity() {
     if (intent == null) return null
     val extraUrl = intent.getStringExtra(EXTRA_URL)
     if (!extraUrl.isNullOrBlank()) return extraUrl
-    if (intent.action == Intent.ACTION_VIEW) {
-      return intent.dataString
-    }
     return intent.dataString
-  }
-
-  @OptIn(ExperimentalMaterial3Api::class)
-  @Composable
-  private fun ProviderPickerScreen(url: String) {
-    val context = LocalContext.current
-    val providers = remember { CustomTabProviders.findProviders(context) }
-    var useWebView by remember { mutableStateOf(false) }
-
-    if (useWebView || providers.isEmpty()) {
-      BrowserScreen(initialUrl = url)
-      return
-    }
-
-    Scaffold(
-      topBar = {
-        TopAppBar(
-          title = { Text(text = "開き方を選ぶ") },
-          navigationIcon = {
-            IconButton(onClick = { finish() }) {
-              Icon(
-                imageVector = Icons.Filled.Close,
-                contentDescription = "Close"
-              )
-            }
-          }
-        )
-      }
-    ) { innerPadding ->
-      LazyColumn(
-        modifier = Modifier
-          .fillMaxSize()
-          .padding(innerPadding)
-      ) {
-        items(providers, key = { it.packageName }) { provider ->
-          Row(
-            modifier = Modifier
-              .fillMaxWidth()
-              .clickable {
-                if (CustomTabProviders.launchCustomTab(this@BrowserActivity, url, provider.packageName)) {
-                  finish()
-                } else {
-                  useWebView = true
-                }
-              }
-              .padding(16.dp)
-          ) {
-            Text(
-              text = provider.label,
-              style = MaterialTheme.typography.bodyLarge
-            )
-          }
-        }
-        item {
-          Row(
-            modifier = Modifier
-              .fillMaxWidth()
-              .clickable { useWebView = true }
-              .padding(16.dp)
-          ) {
-            Text(
-              text = "アプリ内ブラウザ",
-              style = MaterialTheme.typography.bodyLarge
-            )
-          }
-        }
-      }
-    }
   }
 
   @OptIn(ExperimentalMaterial3Api::class)
@@ -273,150 +164,274 @@ class BrowserActivity : ComponentActivity() {
     val context = LocalContext.current
     var currentUrl by remember { mutableStateOf(initialUrl) }
     var pageTitle by remember { mutableStateOf<String?>(null) }
+    var pageIcon by remember { mutableStateOf<Bitmap?>(null) }
     var progress by remember { mutableIntStateOf(0) }
     var canGoBack by remember { mutableStateOf(false) }
     var canGoForward by remember { mutableStateOf(false) }
     var menuExpanded by remember { mutableStateOf(false) }
     var barVisible by remember { mutableStateOf(true) }
     var desktopMode by remember { mutableStateOf(false) }
+    var adBlockEnabled by remember { mutableStateOf(LinkPreferences.isAdBlockEnabled(context)) }
+    var blockedCount by remember { mutableIntStateOf(0) }
+    var chooserVisible by remember { mutableStateOf(false) }
     val hideBarEnabled = remember { LinkPreferences.getHideBarOnScroll(context) }
+    val barOnTop = remember { LinkPreferences.isBarOnTop(context) }
+    val previewEnabled = remember { LinkPreferences.isPreviewEnabled(context) }
     val desktopUserAgent = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
 
-    Scaffold(
-      bottomBar = {
-        AnimatedVisibility(
-          visible = barVisible || !hideBarEnabled,
-          enter = expandVertically() + fadeIn(),
-          exit = shrinkVertically() + fadeOut()
+    val barContent: @Composable androidx.compose.foundation.layout.RowScope.() -> Unit = {
+        IconButton(onClick = { finish() }) {
+          Icon(
+            imageVector = Icons.Filled.Close,
+            contentDescription = "Close"
+          )
+        }
+        Column(modifier = Modifier.weight(1f)) {
+          Text(
+            text = pageTitle?.takeIf { it.isNotBlank() } ?: currentUrl,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+          )
+          Text(
+            text = currentUrl,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+          )
+        }
+        IconButton(
+          onClick = {
+            val newValue = !adBlockEnabled
+            adBlockEnabled = newValue
+            LinkPreferences.setAdBlockEnabled(context, newValue)
+            Toast.makeText(
+              context,
+              if (newValue) "広告ブロック：オン" else "広告ブロック：オフ",
+              Toast.LENGTH_SHORT
+            ).show()
+            webView?.reload()
+          }
         ) {
-        BottomAppBar {
-          IconButton(onClick = { finish() }) {
-            Icon(
-              imageVector = Icons.Filled.Close,
-              contentDescription = "Close"
-            )
-          }
-          Column(modifier = Modifier.weight(1f)) {
-            Text(
-              text = pageTitle?.takeIf { it.isNotBlank() } ?: currentUrl,
-              maxLines = 1,
-              overflow = TextOverflow.Ellipsis
-            )
-            Text(
-              text = currentUrl,
-              style = MaterialTheme.typography.bodySmall,
-              color = MaterialTheme.colorScheme.onSurfaceVariant,
-              maxLines = 1,
-              overflow = TextOverflow.Ellipsis
-            )
-          }
-          IconButton(
-            onClick = { webView?.goBack() },
-            enabled = canGoBack
-          ) {
-            Icon(
-              imageVector = Icons.Filled.ArrowBack,
-              contentDescription = "Back"
-            )
-          }
-          IconButton(
-            onClick = { webView?.goForward() },
-            enabled = canGoForward
-          ) {
-            Icon(
-              imageVector = Icons.Filled.ArrowForward,
-              contentDescription = "Forward"
-            )
-          }
-          IconButton(onClick = { webView?.reload() }) {
-            Icon(
-              imageVector = Icons.Filled.Refresh,
-              contentDescription = "Reload"
-            )
-          }
-          Box {
-            IconButton(onClick = { menuExpanded = true }) {
-              Icon(
-                imageVector = Icons.Filled.MoreVert,
-                contentDescription = "Menu"
-              )
+          Icon(
+            imageVector = ShieldIcon,
+            contentDescription = "広告ブロック",
+            tint = if (adBlockEnabled) {
+              MaterialTheme.colorScheme.primary
+            } else {
+              MaterialTheme.colorScheme.onSurfaceVariant
             }
-            DropdownMenu(
-              expanded = menuExpanded,
-              onDismissRequest = { menuExpanded = false }
+          )
+        }
+        if (blockedCount > 0) {
+          Text(
+            text = blockedCount.toString(),
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.primary
+          )
+        }
+        IconButton(
+          onClick = { webView?.goBack() },
+          enabled = canGoBack
+        ) {
+          Icon(
+            imageVector = Icons.Filled.ArrowBack,
+            contentDescription = "Back"
+          )
+        }
+        IconButton(
+          onClick = { webView?.goForward() },
+          enabled = canGoForward
+        ) {
+          Icon(
+            imageVector = Icons.Filled.ArrowForward,
+            contentDescription = "Forward"
+          )
+        }
+        IconButton(onClick = { webView?.reload() }) {
+          Icon(
+            imageVector = Icons.Filled.Refresh,
+            contentDescription = "Reload"
+          )
+        }
+        Box {
+          IconButton(onClick = { menuExpanded = true }) {
+            Icon(
+              imageVector = Icons.Filled.MoreVert,
+              contentDescription = "Menu"
+            )
+          }
+          DropdownMenu(
+            expanded = menuExpanded,
+            onDismissRequest = { menuExpanded = false }
+          ) {
+            DropdownMenuItem(
+              text = { Text(if (adBlockEnabled) "広告ブロック：オン" else "広告ブロック：オフ") },
+              onClick = {
+                menuExpanded = false
+                val newValue = !adBlockEnabled
+                adBlockEnabled = newValue
+                LinkPreferences.setAdBlockEnabled(context, newValue)
+                webView?.reload()
+              }
+            )
+            DropdownMenuItem(
+              text = { Text(if (desktopMode) "モバイルサイトに切替" else "デスクトップサイト") },
+              onClick = {
+                menuExpanded = false
+                val newDesktopMode = !desktopMode
+                desktopMode = newDesktopMode
+                webView?.let { view ->
+                  view.settings.userAgentString = if (newDesktopMode) desktopUserAgent else null
+                  view.settings.useWideViewPort = newDesktopMode
+                  view.reload()
+                }
+              }
+            )
+            DropdownMenuItem(
+              text = { Text("記事モード") },
+              onClick = {
+                menuExpanded = false
+                val target = webView?.url ?: initialUrl
+                context.startActivity(ArticleActivity.createIntent(context, target))
+              }
+            )
+            DropdownMenuItem(
+              text = { Text("重ねて表示") },
+              onClick = {
+                menuExpanded = false
+                LinkDispatcher.openOverlay(context, currentUrl)
+                finish()
+              }
+            )
+            DropdownMenuItem(
+              text = { Text("別の方法で開く") },
+              onClick = {
+                menuExpanded = false
+                chooserVisible = true
+              }
+            )
+            DropdownMenuItem(
+              text = { Text("共有") },
+              onClick = {
+                menuExpanded = false
+                LinkDispatcher.share(context, currentUrl)
+              }
+            )
+            DropdownMenuItem(
+              text = { Text("リンクをコピー") },
+              onClick = {
+                menuExpanded = false
+                try {
+                  val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                  clipboard.setPrimaryClip(ClipData.newPlainText("URL", currentUrl))
+                  Toast.makeText(context, "リンクをコピーしました", Toast.LENGTH_SHORT).show()
+                } catch (_: Exception) {
+                }
+              }
+            )
+          }
+        }
+    }
+
+    if (chooserVisible) {
+      AlertDialog(
+        onDismissRequest = { chooserVisible = false },
+        title = { Text("別の方法で開く") },
+        text = {
+          Column(
+            modifier = Modifier.verticalScroll(rememberScrollState())
+          ) {
+            if (previewEnabled) {
+              Row(verticalAlignment = Alignment.CenterVertically) {
+                if (pageIcon != null) {
+                  Image(
+                    bitmap = pageIcon!!.asImageBitmap(),
+                    contentDescription = null,
+                    modifier = Modifier.size(28.dp)
+                  )
+                  Spacer(modifier = Modifier.width(10.dp))
+                }
+                Column(modifier = Modifier.weight(1f)) {
+                  Text(
+                    text = pageTitle?.takeIf { it.isNotBlank() } ?: currentUrl,
+                    style = MaterialTheme.typography.bodyMedium,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                  )
+                  Text(
+                    text = currentUrl,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                  )
+                }
+              }
+              Spacer(modifier = Modifier.height(8.dp))
+            }
+            for (method in OpenMethod.CHOICES) {
+              Row(
+                modifier = Modifier
+                  .fillMaxWidth()
+                  .clickable {
+                    chooserVisible = false
+                    if (method != OpenMethod.CANCEL) {
+                      LinkDispatcher.open(this@BrowserActivity, currentUrl, method)
+                      finish()
+                    }
+                  }
+                  .padding(vertical = 10.dp)
+              ) {
+                Text(
+                  text = method.label,
+                  style = MaterialTheme.typography.bodyLarge
+                )
+              }
+            }
+          }
+        },
+        confirmButton = {
+          TextButton(onClick = { chooserVisible = false }) {
+            Text("閉じる")
+          }
+        }
+      )
+    }
+
+    Scaffold(
+      topBar = {
+        if (barOnTop) {
+          AnimatedVisibility(
+            visible = barVisible || !hideBarEnabled,
+            enter = expandVertically() + fadeIn(),
+            exit = shrinkVertically() + fadeOut()
+          ) {
+            androidx.compose.material3.Surface(
+              color = MaterialTheme.colorScheme.surface,
+              tonalElevation = 3.dp
             ) {
-              DropdownMenuItem(
-                text = { Text("記事モード") },
-                onClick = {
-                  menuExpanded = false
-                  val target = webView?.url ?: initialUrl
-                  context.startActivity(ArticleActivity.createIntent(context, target))
-                }
-              )
-              DropdownMenuItem(
-                text = { Text("オーバーレイ表示") },
-                onClick = {
-                  menuExpanded = false
-                  if (!OverlayService.open(context, currentUrl)) {
-                    Toast.makeText(context, "オーバーレイ表示には「他のアプリの上に重ねて表示」の許可が必要です", Toast.LENGTH_LONG).show()
-                    try { context.startActivity(OverlayService.createPermissionIntent(context)) } catch (_: Exception) { }
-                  }
-                }
-              )
-              DropdownMenuItem(
-                text = { Text("外部ブラウザで開く") },
-                onClick = {
-                  menuExpanded = false
-                  val viewIntent = Intent(Intent.ACTION_VIEW, Uri.parse(currentUrl))
-                  val chooser = Intent.createChooser(viewIntent, null)
-                  try {
-                    startActivity(chooser)
-                  } catch (_: Exception) {
-                  }
-                }
-              )
-              DropdownMenuItem(
-                text = { Text(if (desktopMode) "モバイルサイトに切替" else "デスクトップサイト") },
-                onClick = {
-                  menuExpanded = false
-                  val newDesktopMode = !desktopMode
-                  desktopMode = newDesktopMode
-                  webView?.let { view ->
-                    view.settings.userAgentString = if (newDesktopMode) desktopUserAgent else null
-                    view.settings.useWideViewPort = newDesktopMode
-                    view.reload()
-                  }
-                }
-              )
-              DropdownMenuItem(
-                text = { Text("共有") },
-                onClick = {
-                  menuExpanded = false
-                  val shareIntent = Intent(Intent.ACTION_SEND).apply {
-                    type = "text/plain"
-                    putExtra(Intent.EXTRA_TEXT, currentUrl)
-                  }
-                  try {
-                    startActivity(Intent.createChooser(shareIntent, null))
-                  } catch (_: Exception) {
-                  }
-                }
-              )
-              DropdownMenuItem(
-                text = { Text("リンクをコピー") },
-                onClick = {
-                  menuExpanded = false
-                  try {
-                    val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                    clipboard.setPrimaryClip(ClipData.newPlainText("URL", currentUrl))
-                    Toast.makeText(context, "リンクをコピーしました", Toast.LENGTH_SHORT).show()
-                  } catch (_: Exception) {
-                  }
-                }
-              )
+              Row(
+                modifier = Modifier
+                  .fillMaxWidth()
+                  .height(64.dp),
+                verticalAlignment = Alignment.CenterVertically
+              ) {
+                barContent()
+              }
             }
           }
         }
+      },
+      bottomBar = {
+        if (!barOnTop) {
+          AnimatedVisibility(
+            visible = barVisible || !hideBarEnabled,
+            enter = expandVertically() + fadeIn(),
+            exit = shrinkVertically() + fadeOut()
+          ) {
+            BottomAppBar { barContent() }
+          }
         }
       }
     ) { innerPadding ->
@@ -432,8 +447,8 @@ class BrowserActivity : ComponentActivity() {
           )
         }
         AndroidView(
-          factory = { context ->
-            WebView(context).apply {
+          factory = { factoryContext ->
+            WebView(factoryContext).apply {
               layoutParams = ViewGroup.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.MATCH_PARENT
@@ -441,7 +456,20 @@ class BrowserActivity : ComponentActivity() {
               settings.javaScriptEnabled = true
               settings.domStorageEnabled = true
               settings.loadsImagesAutomatically = true
+              AdBlocker.ensureLoaded(factoryContext)
               webViewClient = object : WebViewClient() {
+                override fun shouldInterceptRequest(
+                  view: WebView?,
+                  request: WebResourceRequest?
+                ): WebResourceResponse? {
+                  val url = request?.url?.toString()
+                  if (adBlockEnabled && AdBlocker.isAdUrl(url)) {
+                    blockedCount++
+                    return AdBlocker.emptyResponse()
+                  }
+                  return super.shouldInterceptRequest(view, request)
+                }
+
                 override fun shouldOverrideUrlLoading(
                   view: WebView?,
                   request: WebResourceRequest?
@@ -463,6 +491,7 @@ class BrowserActivity : ComponentActivity() {
                     currentUrl = url
                   }
                   pageTitle = null
+                  blockedCount = 0
                   canGoBack = view?.canGoBack() == true
                   canGoForward = view?.canGoForward() == true
                 }
@@ -491,9 +520,9 @@ class BrowserActivity : ComponentActivity() {
                   canGoForward = view?.canGoForward() == true
                   val finishedUrl = view?.url ?: url
                   if (finishedUrl != null && (finishedUrl.startsWith("http://") || finishedUrl.startsWith("https://"))) {
-                    val pageTitle = view?.title ?: finishedUrl
-                    HistoryStore.record(context, finishedUrl, pageTitle)
-                    TabStore.upsert(context, finishedUrl, pageTitle)
+                    val finishedTitle = view?.title ?: finishedUrl
+                    HistoryStore.record(context, finishedUrl, finishedTitle)
+                    TabStore.upsert(context, finishedUrl, finishedTitle)
                   }
                 }
               }
@@ -504,6 +533,12 @@ class BrowserActivity : ComponentActivity() {
 
                 override fun onReceivedTitle(view: WebView?, title: String?) {
                   pageTitle = title?.takeIf { it.isNotBlank() }
+                }
+
+                override fun onReceivedIcon(view: WebView?, icon: Bitmap?) {
+                  if (icon != null) {
+                    pageIcon = icon
+                  }
                 }
               }
               setOnScrollChangeListener { _, _, scrollY, _, oldScrollY ->
@@ -536,7 +571,6 @@ class BrowserActivity : ComponentActivity() {
   companion object {
     const val EXTRA_URL = "arun.com.chromer.extra.URL"
     const val EXTRA_FORCE_IN_APP = "arun.com.chromer.extra.FORCE_IN_APP"
-    const val EXTRA_OPEN_SECONDARY = "arun.com.chromer.extra.OPEN_SECONDARY"
 
     private val SCHEME_REGEX = Regex("^[a-zA-Z][a-zA-Z0-9+.-]*://.*")
 
@@ -549,13 +583,7 @@ class BrowserActivity : ComponentActivity() {
     fun createDirectIntent(context: Context, url: String): Intent =
       createIntent(context, url).apply { putExtra(EXTRA_FORCE_IN_APP, true) }
 
-    fun createSecondaryIntent(context: Context, url: String): Intent =
-      createIntent(context, url).apply {
-        putExtra(EXTRA_OPEN_SECONDARY, true)
-        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-      }
-
-    internal fun normalizeUrl(rawUrl: String): String {
+    fun normalizeUrl(rawUrl: String): String {
       val trimmed = rawUrl.trim()
       if (trimmed.isEmpty()) return ""
       if (SCHEME_REGEX.matches(trimmed)) return trimmed
@@ -569,42 +597,23 @@ class BrowserActivity : ComponentActivity() {
   }
 }
 
-private val OpenInNewIcon: ImageVector by lazy {
+private val ShieldIcon: ImageVector by lazy {
   ImageVector.Builder(
-    name = "OpenInNew",
+    name = "Shield",
     defaultWidth = 24.dp,
     defaultHeight = 24.dp,
     viewportWidth = 24f,
     viewportHeight = 24f
   ).apply {
     path(fill = SolidColor(Color.Black)) {
-      moveTo(19f, 19f)
-      horizontalLineTo(5f)
+      moveTo(12f, 1f)
+      lineTo(3f, 5f)
+      verticalLineTo(11f)
+      curveTo(3f, 16.55f, 6.84f, 21.74f, 12f, 23f)
+      curveTo(17.16f, 21.74f, 21f, 16.55f, 21f, 11f)
       verticalLineTo(5f)
-      horizontalLineTo(12f)
-      verticalLineTo(3f)
-      horizontalLineTo(5f)
-      curveTo(3.89f, 3f, 3f, 3.9f, 3f, 5f)
-      verticalLineTo(19f)
-      curveTo(3f, 20.1f, 3.89f, 21f, 5f, 21f)
-      horizontalLineTo(19f)
-      curveTo(20.1f, 21f, 21f, 20.1f, 21f, 19f)
-      verticalLineTo(12f)
-      horizontalLineTo(19f)
-      verticalLineTo(19f)
-      close()
-      moveTo(14f, 3f)
-      verticalLineTo(5f)
-      horizontalLineTo(17.59f)
-      lineTo(7.76f, 14.83f)
-      lineTo(9.17f, 16.24f)
-      lineTo(19f, 6.41f)
-      verticalLineTo(10f)
-      horizontalLineTo(21f)
-      verticalLineTo(3f)
-      horizontalLineTo(14f)
+      lineTo(12f, 1f)
       close()
     }
   }.build()
 }
-
