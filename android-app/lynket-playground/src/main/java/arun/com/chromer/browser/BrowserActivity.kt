@@ -31,12 +31,14 @@ import android.webkit.WebChromeClient
 import android.webkit.WebResourceRequest
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.OnBackPressedCallback
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -55,6 +57,7 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -74,6 +77,7 @@ import androidx.compose.ui.viewinterop.AndroidView
 import arun.com.chromer.customtab.CustomTabProviders
 import arun.com.chromer.customtab.LinkPreferences
 import arun.com.chromer.customtab.OpenMode
+import arun.com.chromer.overlay.OverlayService
 import arun.com.chromer.theme.LynketTheme
 
 class BrowserActivity : ComponentActivity() {
@@ -109,6 +113,16 @@ class BrowserActivity : ComponentActivity() {
       if (pkg != null && CustomTabProviders.launchCustomTab(this, initialUrl, pkg)) {
         finish()
         return
+      }
+    }
+
+    if (mode == OpenMode.OVERLAY) {
+      if (OverlayService.open(this, initialUrl)) {
+        finish()
+        return
+      } else {
+        Toast.makeText(this, "オーバーレイ表示には「他のアプリの上に重ねて表示」の許可が必要です", Toast.LENGTH_LONG).show()
+        try { startActivity(OverlayService.createPermissionIntent(this)) } catch (_: Exception) { }
       }
     }
 
@@ -215,6 +229,7 @@ class BrowserActivity : ComponentActivity() {
   @SuppressLint("SetJavaScriptEnabled")
   @Composable
   private fun BrowserScreen(initialUrl: String) {
+    val context = LocalContext.current
     var currentUrl by remember { mutableStateOf(initialUrl) }
     var pageTitle by remember { mutableStateOf<String?>(null) }
     var progress by remember { mutableIntStateOf(0) }
@@ -283,6 +298,15 @@ class BrowserActivity : ComponentActivity() {
               imageVector = Icons.Filled.Refresh,
               contentDescription = "Reload"
             )
+          }
+          Spacer(modifier = Modifier.weight(1f))
+          TextButton(onClick = {
+            if (!OverlayService.open(context, currentUrl)) {
+              Toast.makeText(context, "オーバーレイ表示には「他のアプリの上に重ねて表示」の許可が必要です", Toast.LENGTH_LONG).show()
+              try { context.startActivity(OverlayService.createPermissionIntent(context)) } catch (_: Exception) { }
+            }
+          }) {
+            Text(text = "オーバーレイ")
           }
         }
       }
@@ -446,3 +470,4 @@ private val OpenInNewIcon: ImageVector by lazy {
     }
   }.build()
 }
+
