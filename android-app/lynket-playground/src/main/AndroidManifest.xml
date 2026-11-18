@@ -69,6 +69,9 @@
         <data android:scheme="https" />
       </intent-filter>
     </activity>
+    <receiver
+      android:name=".customtab.MenuActionReceiver"
+      android:exported="false" />
     <activity android:name=".tabs.TabsActivity" android:exported="false" />
     <activity android:name=".history.HistoryActivity" android:exported="false" />
     <activity android:name=".setup.SetupActivity" android:exported="false" />
