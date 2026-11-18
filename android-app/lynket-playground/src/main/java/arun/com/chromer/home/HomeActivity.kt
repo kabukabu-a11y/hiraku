@@ -72,6 +72,8 @@ import arun.com.chromer.customtab.CustomTabProviders
 import arun.com.chromer.customtab.LinkPreferences
 import arun.com.chromer.customtab.OpenMode
 import arun.com.chromer.di.HasInjector
+import arun.com.chromer.history.HistoryActivity
+import arun.com.chromer.tabs.TabsActivity
 import arun.com.chromer.theme.LynketTheme
 import com.deliveryhero.whetstone.activity.ContributesActivityInjector
 
@@ -301,6 +303,29 @@ private fun HomeContent(
           )
         }
       }
+
+      Card(modifier = Modifier.fillMaxWidth()) {
+        Column(
+          modifier = Modifier.padding(16.dp),
+          verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+          Text(
+            text = "タブと履歴",
+            style = MaterialTheme.typography.titleMedium
+          )
+          Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Button(
+              onClick = { context.startActivity(Intent(context, TabsActivity::class.java)) },
+              modifier = Modifier.weight(1f)
+            ) { Text("タブ一覧") }
+            OutlinedButton(
+              onClick = { context.startActivity(Intent(context, HistoryActivity::class.java)) },
+              modifier = Modifier.weight(1f)
+            ) { Text("履歴") }
+          }
+        }
+      }
+
       Text(
         text = "バージョン ${versionName ?: "-"}（開発中）",
         style = MaterialTheme.typography.bodySmall,
