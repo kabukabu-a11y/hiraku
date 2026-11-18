@@ -10,11 +10,11 @@ android {
   compileSdk = 34
 
   defaultConfig {
-    applicationId = "arun.com.chromer"
+    applicationId = "com.kabukabu.hiraku"
     minSdk = 28
     targetSdk = 34
-    versionCode = 8
-    versionName = "0.8.0"
+    versionCode = 100
+    versionName = "1.0.0"
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     vectorDrawables {
