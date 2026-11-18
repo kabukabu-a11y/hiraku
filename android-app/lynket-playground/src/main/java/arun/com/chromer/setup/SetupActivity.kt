@@ -22,9 +22,12 @@ package arun.com.chromer.setup
 
 import android.Manifest
 import android.content.Context
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
+import android.net.Uri
 import android.os.Bundle
+import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
@@ -124,10 +127,6 @@ private fun SetupScreen(onDone: () -> Unit) {
   val roleLauncher = rememberLauncherForActivityResult(
     ActivityResultContracts.StartActivityForResult()
   ) { refreshTick++ }
-  val notificationLauncher = rememberLauncherForActivityResult(
-    ActivityResultContracts.RequestPermission()
-  ) { refreshTick++ }
-
   Scaffold(
     topBar = {
       TopAppBar(title = { Text("セットアップ") })
@@ -174,11 +173,39 @@ private fun SetupScreen(onDone: () -> Unit) {
         description = "バブルやオーバーレイの状態を通知で知らせます",
         granted = notificationsGranted,
         onAction = {
-          if (Build.VERSION.SDK_INT >= 33) {
-            notificationLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+          try {
+            val intent = Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
+              .putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)
+            context.startActivity(intent)
+          } catch (_: Exception) {
+            try {
+              context.startActivity(
+                Intent(
+                  Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                  Uri.parse("package:" + context.packageName)
+                )
+              )
+            } catch (_: Exception) {
+            }
           }
         }
       )
+      Card(modifier = Modifier.fillMaxWidth()) {
+        Column(
+          modifier = Modifier.padding(16.dp),
+          verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+          Text(
+            text = "うまく許可できないとき",
+            style = MaterialTheme.typography.titleMedium
+          )
+          Text(
+            text = "APKから直接インストールしたアプリは、Androidの「制限付き設定」によって一部の許可がブロックされることがあります。その場合は、設定 → アプリ → Hiraku → 右上の︙メニュー →「制限付き設定を許可」を押してから、もう一度この画面で許可してください。",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+          )
+        }
+      }
       Button(
         onClick = onDone,
         modifier = Modifier.fillMaxWidth()
