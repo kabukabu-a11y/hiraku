@@ -40,23 +40,23 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Switch
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Search
-import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
@@ -73,22 +73,24 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
-import arun.com.chromer.browser.BrowserActivity
+import arun.com.chromer.apps.AppRulesActivity
 import arun.com.chromer.browser.DefaultBrowser
 import arun.com.chromer.customtab.CustomTabProviders
 import arun.com.chromer.customtab.LinkPreferences
-import arun.com.chromer.customtab.OpenMode
+import arun.com.chromer.customtab.OpenMethod
 import arun.com.chromer.di.HasInjector
 import arun.com.chromer.history.HistoryActivity
+import arun.com.chromer.link.LinkHandlerActivity
+import arun.com.chromer.settings.SettingsActivity
 import arun.com.chromer.setup.SetupActivity
 import arun.com.chromer.setup.SetupPreferences
 import arun.com.chromer.tabs.TabsActivity
 import arun.com.chromer.theme.LynketTheme
-import androidx.compose.foundation.layout.width
-import androidx.compose.ui.text.style.TextOverflow
+import com.deliveryhero.whetstone.activity.ContributesActivityInjector
 import java.net.HttpURLConnection
 import java.net.URL
 import java.net.URLEncoder
@@ -96,7 +98,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
-import com.deliveryhero.whetstone.activity.ContributesActivityInjector
 
 @ContributesActivityInjector
 class HomeActivity : ComponentActivity(), HasInjector {
@@ -111,7 +112,7 @@ class HomeActivity : ComponentActivity(), HasInjector {
         ) {
           HomeContent(
             onOpenUrl = { url ->
-              startActivity(BrowserActivity.createIntent(this, url))
+              startActivity(LinkHandlerActivity.createOpenIntent(this, url))
             }
           )
         }
@@ -141,10 +142,9 @@ private fun HomeContent(
   }
   val context = LocalContext.current
   val providers = remember { CustomTabProviders.findProviders(context) }
-  var mode by remember { mutableStateOf(LinkPreferences.getMode(context)) }
+  var defaultMethod by remember { mutableStateOf(LinkPreferences.getDefaultMethod(context)) }
   var providerPackage by remember { mutableStateOf(LinkPreferences.getProviderPackage(context)) }
   var secondaryPackage by remember { mutableStateOf(LinkPreferences.getSecondaryProviderPackage(context)) }
-  var hideBarOnScroll by remember { mutableStateOf(LinkPreferences.getHideBarOnScroll(context)) }
   var isDefault by remember { mutableStateOf(DefaultBrowser.isDefaultBrowser(context)) }
   val versionName = remember {
     try {
@@ -163,6 +163,7 @@ private fun HomeContent(
     val observer = LifecycleEventObserver { _, event ->
       if (event == Lifecycle.Event.ON_RESUME) {
         isDefault = DefaultBrowser.isDefaultBrowser(context)
+        defaultMethod = LinkPreferences.getDefaultMethod(context)
       }
     }
     lifecycleOwner.lifecycle.addObserver(observer)
@@ -264,7 +265,7 @@ private fun HomeContent(
           )
           Spacer(modifier = Modifier.height(4.dp))
           Text(
-            text = "デフォルトにすると、他のアプリでリンクをタップしたときにこのアプリで開き、「リンクの開き方」で選んだブラウザや表示方法が使われます",
+            text = "デフォルトにすると、他のアプリでリンクをタップしたときにこのアプリが受け取り、「標準の開き方」やアプリごとの設定で開きます",
             style = MaterialTheme.typography.bodySmall
           )
           Spacer(modifier = Modifier.height(12.dp))
@@ -301,16 +302,51 @@ private fun HomeContent(
       Card(modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(16.dp)) {
           Text(
-            text = "リンクの開き方",
+            text = "標準の開き方",
             style = MaterialTheme.typography.titleMedium
           )
+          Text(
+            text = "アプリごとの設定がないリンクは、この方法で開きます",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+          )
+          for (method in OpenMethod.CHOICES) {
+            LinkOptionRow(
+              label = method.label,
+              selected = defaultMethod == method,
+              onSelect = {
+                LinkPreferences.setDefaultMethod(context, method)
+                defaultMethod = method
+              }
+            )
+          }
           LinkOptionRow(
-            label = "システム既定のブラウザ",
-            selected = mode == OpenMode.PROVIDER && providerPackage == null,
+            label = OpenMethod.ASK.label,
+            selected = defaultMethod == OpenMethod.ASK,
             onSelect = {
-              LinkPreferences.setMode(context, OpenMode.PROVIDER)
+              LinkPreferences.setDefaultMethod(context, OpenMethod.ASK)
+              defaultMethod = OpenMethod.ASK
+            }
+          )
+        }
+      }
+
+      Card(modifier = Modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.padding(16.dp)) {
+          Text(
+            text = "第1のブラウザ",
+            style = MaterialTheme.typography.titleMedium
+          )
+          Text(
+            text = "「選んだブラウザ」で使うブラウザです",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+          )
+          LinkOptionRow(
+            label = "自動（検出された最初のブラウザ）",
+            selected = providerPackage == null,
+            onSelect = {
               LinkPreferences.setProviderPackage(context, null)
-              mode = OpenMode.PROVIDER
               providerPackage = null
             }
           )
@@ -318,11 +354,9 @@ private fun HomeContent(
             LinkOptionRow(
               label = provider.label,
               iconPackage = provider.packageName,
-              selected = mode == OpenMode.PROVIDER && providerPackage == provider.packageName,
+              selected = providerPackage == provider.packageName,
               onSelect = {
-                LinkPreferences.setMode(context, OpenMode.PROVIDER)
                 LinkPreferences.setProviderPackage(context, provider.packageName)
-                mode = OpenMode.PROVIDER
                 providerPackage = provider.packageName
               }
             )
@@ -334,38 +368,6 @@ private fun HomeContent(
               color = MaterialTheme.colorScheme.onSurfaceVariant
             )
           }
-          LinkOptionRow(
-            label = "開くたびに選ぶ",
-            selected = mode == OpenMode.ASK,
-            onSelect = {
-              LinkPreferences.setMode(context, OpenMode.ASK)
-              mode = OpenMode.ASK
-            }
-          )
-          LinkOptionRow(
-            label = "アプリ内ブラウザ",
-            selected = mode == OpenMode.IN_APP,
-            onSelect = {
-              LinkPreferences.setMode(context, OpenMode.IN_APP)
-              mode = OpenMode.IN_APP
-            }
-          )
-          LinkOptionRow(
-            label = "オーバーレイ表示",
-            selected = mode == OpenMode.OVERLAY,
-            onSelect = {
-              LinkPreferences.setMode(context, OpenMode.OVERLAY)
-              mode = OpenMode.OVERLAY
-            }
-          )
-          LinkOptionRow(
-            label = "Web heads（バブル）",
-            selected = mode == OpenMode.WEB_HEAD,
-            onSelect = {
-              LinkPreferences.setMode(context, OpenMode.WEB_HEAD)
-              mode = OpenMode.WEB_HEAD
-            }
-          )
         }
       }
 
@@ -402,33 +404,11 @@ private fun HomeContent(
         }
       }
 
-      Card(modifier = Modifier.fillMaxWidth()) {
-        Column(modifier = Modifier.padding(16.dp)) {
-          Text(
-            text = "アプリ内ブラウザ",
-            style = MaterialTheme.typography.titleMedium
-          )
-          Row(
-            verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier.fillMaxWidth()
-          ) {
-            Column(modifier = Modifier.weight(1f)) {
-              Text(text = "下スクロールでバーを隠す")
-              Text(
-                text = "ページを下にスクロールすると下のバーが隠れて、画面を広く使えます",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-              )
-            }
-            Switch(
-              checked = hideBarOnScroll,
-              onCheckedChange = {
-                LinkPreferences.setHideBarOnScroll(context, it)
-                hideBarOnScroll = it
-              }
-            )
-          }
-        }
+      Button(
+        onClick = { context.startActivity(Intent(context, AppRulesActivity::class.java)) },
+        modifier = Modifier.fillMaxWidth()
+      ) {
+        Text("アプリごとの設定")
       }
 
       Card(modifier = Modifier.fillMaxWidth()) {
@@ -453,15 +433,23 @@ private fun HomeContent(
         }
       }
 
-      OutlinedButton(
-        onClick = { context.startActivity(Intent(context, SetupActivity::class.java)) },
-        modifier = Modifier.fillMaxWidth()
-      ) {
-        Text("権限の管理")
+      Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        OutlinedButton(
+          onClick = { context.startActivity(Intent(context, SettingsActivity::class.java)) },
+          modifier = Modifier.weight(1f)
+        ) {
+          Text("設定")
+        }
+        OutlinedButton(
+          onClick = { context.startActivity(Intent(context, SetupActivity::class.java)) },
+          modifier = Modifier.weight(1f)
+        ) {
+          Text("権限の管理")
+        }
       }
 
       Text(
-        text = "バージョン ${versionName ?: "-"}（開発中）",
+        text = "バージョン ${versionName ?: "-"}",
         style = MaterialTheme.typography.bodySmall,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
         modifier = Modifier.align(Alignment.CenterHorizontally)
@@ -517,7 +505,6 @@ private fun LinkOptionRow(
     Text(text = label)
   }
 }
-
 
 private suspend fun fetchSearchSuggestions(query: String): List<String> =
   withContext(Dispatchers.IO) {
