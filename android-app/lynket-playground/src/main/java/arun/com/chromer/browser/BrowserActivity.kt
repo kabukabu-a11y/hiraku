@@ -74,6 +74,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import arun.com.chromer.bubbles.BubbleService
 import arun.com.chromer.customtab.CustomTabProviders
 import arun.com.chromer.customtab.LinkPreferences
 import arun.com.chromer.customtab.OpenMode
@@ -106,29 +107,42 @@ class BrowserActivity : ComponentActivity() {
       return
     }
 
+    val forceInApp = intent.getBooleanExtra(EXTRA_FORCE_IN_APP, false)
     val mode = LinkPreferences.getMode(this)
-    if (mode == OpenMode.PROVIDER) {
-      val pkg = LinkPreferences.getProviderPackage(this)
-        ?: CustomTabProviders.getSystemDefaultProvider(this)
-      if (pkg != null && CustomTabProviders.launchCustomTab(this, initialUrl, pkg)) {
-        finish()
-        return
+    if (!forceInApp) {
+      if (mode == OpenMode.PROVIDER) {
+        val pkg = LinkPreferences.getProviderPackage(this)
+          ?: CustomTabProviders.getSystemDefaultProvider(this)
+        if (pkg != null && CustomTabProviders.launchCustomTab(this, initialUrl, pkg)) {
+          finish()
+          return
+        }
       }
-    }
 
-    if (mode == OpenMode.OVERLAY) {
-      if (OverlayService.open(this, initialUrl)) {
-        finish()
-        return
-      } else {
-        Toast.makeText(this, "オーバーレイ表示には「他のアプリの上に重ねて表示」の許可が必要です", Toast.LENGTH_LONG).show()
-        try { startActivity(OverlayService.createPermissionIntent(this)) } catch (_: Exception) { }
+      if (mode == OpenMode.OVERLAY) {
+        if (OverlayService.open(this, initialUrl)) {
+          finish()
+          return
+        } else {
+          Toast.makeText(this, "オーバーレイ表示には「他のアプリの上に重ねて表示」の許可が必要です", Toast.LENGTH_LONG).show()
+          try { startActivity(OverlayService.createPermissionIntent(this)) } catch (_: Exception) { }
+        }
+      }
+
+      if (mode == OpenMode.WEB_HEAD) {
+        if (BubbleService.open(this, initialUrl)) {
+          finish()
+          return
+        } else {
+          Toast.makeText(this, "Web headsには「他のアプリの上に重ねて表示」の許可が必要です", Toast.LENGTH_LONG).show()
+          try { startActivity(OverlayService.createPermissionIntent(this)) } catch (_: Exception) { }
+        }
       }
     }
 
     setContent {
       LynketTheme {
-        if (mode == OpenMode.ASK) {
+        if (mode == OpenMode.ASK && !forceInApp) {
           ProviderPickerScreen(url = initialUrl)
         } else {
           BrowserScreen(initialUrl = initialUrl)
@@ -411,6 +425,7 @@ class BrowserActivity : ComponentActivity() {
 
   companion object {
     const val EXTRA_URL = "arun.com.chromer.extra.URL"
+    const val EXTRA_FORCE_IN_APP = "arun.com.chromer.extra.FORCE_IN_APP"
 
     private val SCHEME_REGEX = Regex("^[a-zA-Z][a-zA-Z0-9+.-]*://.*")
 
@@ -419,6 +434,9 @@ class BrowserActivity : ComponentActivity() {
         putExtra(EXTRA_URL, url)
       }
     }
+
+    fun createDirectIntent(context: Context, url: String): Intent =
+      createIntent(context, url).apply { putExtra(EXTRA_FORCE_IN_APP, true) }
 
     internal fun normalizeUrl(rawUrl: String): String {
       val trimmed = rawUrl.trim()
