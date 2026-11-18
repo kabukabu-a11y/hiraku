@@ -13,8 +13,8 @@ android {
     applicationId = "arun.com.chromer"
     minSdk = 28
     targetSdk = 34
-    versionCode = 1
-    versionName = "1.0"
+    versionCode = 5
+    versionName = "0.5.0"
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     vectorDrawables {
