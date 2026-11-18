@@ -127,6 +127,30 @@ private fun SetupScreen(onDone: () -> Unit) {
   val roleLauncher = rememberLauncherForActivityResult(
     ActivityResultContracts.StartActivityForResult()
   ) { refreshTick++ }
+  val notificationPermissionLauncher = rememberLauncherForActivityResult(
+    ActivityResultContracts.RequestPermission()
+  ) { granted ->
+    refreshTick++
+    if (!granted) {
+      // The dialog could not grant it (denied before, restricted
+      // settings, OEM quirks): fall back to the settings page.
+      try {
+        val intent = Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
+          .putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)
+        context.startActivity(intent)
+      } catch (_: Exception) {
+        try {
+          context.startActivity(
+            Intent(
+              Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+              Uri.parse("package:" + context.packageName)
+            )
+          )
+        } catch (_: Exception) {
+        }
+      }
+    }
+  }
   Scaffold(
     topBar = {
       TopAppBar(title = { Text("セットアップ") })
@@ -173,20 +197,8 @@ private fun SetupScreen(onDone: () -> Unit) {
         description = "バブルやオーバーレイの状態を通知で知らせます",
         granted = notificationsGranted,
         onAction = {
-          try {
-            val intent = Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
-              .putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)
-            context.startActivity(intent)
-          } catch (_: Exception) {
-            try {
-              context.startActivity(
-                Intent(
-                  Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
-                  Uri.parse("package:" + context.packageName)
-                )
-              )
-            } catch (_: Exception) {
-            }
+          if (Build.VERSION.SDK_INT >= 33) {
+            notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
           }
         }
       )
