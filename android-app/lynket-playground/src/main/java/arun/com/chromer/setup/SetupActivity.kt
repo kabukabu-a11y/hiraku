@@ -47,6 +47,8 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import arun.com.chromer.R
+import androidx.compose.ui.res.stringResource
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -153,7 +155,7 @@ private fun SetupScreen(onDone: () -> Unit) {
   }
   Scaffold(
     topBar = {
-      TopAppBar(title = { Text("セットアップ") })
+      TopAppBar(title = { Text(stringResource(R.string.setup_title)) })
     }
   ) { padding ->
     Column(
@@ -165,13 +167,13 @@ private fun SetupScreen(onDone: () -> Unit) {
       verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
       Text(
-        text = "このアプリが使う権限を確認します。あとからホーム画面の「権限の管理」でも変更できます。",
+        text = stringResource(R.string.setup_intro),
         style = MaterialTheme.typography.bodyMedium,
         color = MaterialTheme.colorScheme.onSurfaceVariant
       )
       SetupItemCard(
-        title = "上に重ねて表示",
-        description = "オーバーレイ表示とWeb heads（バブル）に必要です",
+        title = stringResource(R.string.setup_overlay),
+        description = stringResource(R.string.setup_overlay_desc),
         granted = overlayGranted,
         onAction = {
           try {
@@ -181,10 +183,10 @@ private fun SetupScreen(onDone: () -> Unit) {
         }
       )
       SetupItemCard(
-        title = "デフォルトブラウザ",
-        description = "他のアプリのリンクをこのアプリで受け取れるようになります",
+        title = stringResource(R.string.home_default_browser),
+        description = stringResource(R.string.setup_default_desc),
         granted = isDefault,
-        actionLabel = "設定する",
+        actionLabel = stringResource(R.string.setup_set),
         onAction = {
           try {
             roleLauncher.launch(DefaultBrowser.createRequestIntent(context))
@@ -193,8 +195,8 @@ private fun SetupScreen(onDone: () -> Unit) {
         }
       )
       SetupItemCard(
-        title = "通知",
-        description = "バブルやオーバーレイの状態を通知で知らせます",
+        title = stringResource(R.string.settings_notifications),
+        description = stringResource(R.string.setup_notifications_desc),
         granted = notificationsGranted,
         onAction = {
           if (Build.VERSION.SDK_INT >= 33) {
@@ -208,11 +210,11 @@ private fun SetupScreen(onDone: () -> Unit) {
           verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
           Text(
-            text = "うまく許可できないとき",
+            text = stringResource(R.string.setup_trouble),
             style = MaterialTheme.typography.titleMedium
           )
           Text(
-            text = "APKから直接インストールしたアプリは、Androidの「制限付き設定」によって一部の許可がブロックされることがあります。その場合は、設定 → アプリ → Hiraku → 右上の︙メニュー →「制限付き設定を許可」を押してから、もう一度この画面で許可してください。",
+            text = stringResource(R.string.setup_restricted_desc),
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant
           )
@@ -222,7 +224,7 @@ private fun SetupScreen(onDone: () -> Unit) {
         onClick = onDone,
         modifier = Modifier.fillMaxWidth()
       ) {
-        Text("はじめる")
+        Text(stringResource(R.string.setup_start))
       }
     }
   }
@@ -233,7 +235,7 @@ private fun SetupItemCard(
   title: String,
   description: String,
   granted: Boolean,
-  actionLabel: String = "許可する",
+  actionLabel: String? = null,
   onAction: () -> Unit
 ) {
   Card(modifier = Modifier.fillMaxWidth()) {
@@ -251,7 +253,7 @@ private fun SetupItemCard(
         color = MaterialTheme.colorScheme.onSurfaceVariant
       )
       Text(
-        text = if (granted) "状態：許可済み" else "状態：未設定",
+        text = stringResource(if (granted) R.string.setup_status_granted else R.string.setup_status_not_set),
         style = MaterialTheme.typography.bodySmall,
         color = if (granted) {
           MaterialTheme.colorScheme.primary
@@ -263,7 +265,7 @@ private fun SetupItemCard(
         onClick = onAction,
         enabled = !granted
       ) {
-        Text(if (granted) "設定済み" else actionLabel)
+        Text(if (granted) stringResource(R.string.setup_done) else (actionLabel ?: stringResource(R.string.setup_allow)))
       }
     }
   }
