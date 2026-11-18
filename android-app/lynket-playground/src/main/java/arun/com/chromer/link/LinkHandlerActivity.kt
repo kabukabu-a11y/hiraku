@@ -212,7 +212,7 @@ class LinkHandlerActivity : ComponentActivity() {
             )
           }
           Spacer(modifier = Modifier.height(8.dp))
-          for (method in OpenMethod.CHOICES) {
+          for (method in LinkPreferences.getChooserMethods(context)) {
             Row(
               modifier = Modifier
                 .fillMaxWidth()
