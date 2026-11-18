@@ -69,6 +69,7 @@ dependencies {
   implementation(libs.androidx.ui.tooling.preview)
   implementation(libs.androidx.material3)
   implementation("androidx.compose.material:material-icons-core")
+  implementation("androidx.browser:browser:1.8.0")
 
   implementation(libs.molecule.runtime)
 
