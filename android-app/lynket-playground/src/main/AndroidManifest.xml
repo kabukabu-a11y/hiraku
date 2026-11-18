@@ -77,5 +77,13 @@
         android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
         android:value="Floating overlay browser window displayed over other apps at the user request" />
     </service>
+    <service
+      android:name=".bubbles.BubbleService"
+      android:exported="false"
+      android:foregroundServiceType="specialUse">
+      <property
+        android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+        android:value="Floating web head bubbles displayed over other apps at the user request" />
+    </service>
   </application>
 </manifest>
