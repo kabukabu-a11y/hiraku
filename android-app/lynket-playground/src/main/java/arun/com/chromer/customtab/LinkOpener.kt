@@ -154,18 +154,15 @@ object LinkPreferences {
   // ----- v2: default method and per-app rules -----
 
   /**
-   * The standard way links open. Until the user picks one, the legacy
-   * mode is migrated: whatever was in effect first becomes the default.
+   * The standard way links open. Until the user picks one explicitly,
+   * the standard is the overlay (stay-in-app) method, per the v2
+   * concept: everything opens overlaid unless a browser method is
+   * chosen on purpose.
    */
   fun getDefaultMethod(context: Context): OpenMethod {
     val stored = OpenMethod.fromName(prefs(context).getString(KEY_DEFAULT_METHOD, null))
     if (stored != null) return stored
-    return when (getMode(context)) {
-      OpenMode.PROVIDER -> OpenMethod.CUSTOM_TAB_PRIMARY
-      OpenMode.ASK -> OpenMethod.ASK
-      OpenMode.WEB_HEAD -> OpenMethod.BUBBLE
-      OpenMode.IN_APP, OpenMode.OVERLAY -> OpenMethod.STAY_OVERLAY
-    }
+    return OpenMethod.STAY_OVERLAY
   }
 
   fun setDefaultMethod(context: Context, method: OpenMethod) {
