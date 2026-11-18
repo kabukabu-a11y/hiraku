@@ -44,6 +44,8 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.res.stringResource
+import arun.com.chromer.R
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -80,10 +82,10 @@ private fun HistoryScreen(onBack: () -> Unit) {
   Scaffold(
     topBar = {
       TopAppBar(
-        title = { Text("履歴") },
+        title = { Text(stringResource(R.string.history_title)) },
         navigationIcon = {
           IconButton(onClick = onBack) {
-            Icon(Icons.Filled.ArrowBack, contentDescription = "戻る")
+            Icon(Icons.Filled.ArrowBack, contentDescription = stringResource(R.string.act_back))
           }
         },
         actions = {
@@ -94,7 +96,7 @@ private fun HistoryScreen(onBack: () -> Unit) {
             },
             enabled = entries.isNotEmpty()
           ) {
-            Text("すべて消去")
+            Text(stringResource(R.string.history_clear_all))
           }
         }
       )
@@ -108,7 +110,7 @@ private fun HistoryScreen(onBack: () -> Unit) {
         contentAlignment = Alignment.Center
       ) {
         Text(
-          text = "履歴はまだありません",
+          text = stringResource(R.string.history_empty),
           color = MaterialTheme.colorScheme.onSurfaceVariant
         )
       }
@@ -170,7 +172,7 @@ private fun HistoryRow(
       )
     }
     IconButton(onClick = onDelete) {
-      Icon(Icons.Filled.Close, contentDescription = "削除")
+      Icon(Icons.Filled.Close, contentDescription = stringResource(R.string.act_delete))
     }
   }
 }
