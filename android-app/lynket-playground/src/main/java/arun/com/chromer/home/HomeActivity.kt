@@ -265,7 +265,7 @@ private fun HomeContent(
           )
           Spacer(modifier = Modifier.height(4.dp))
           Text(
-            text = "デフォルトにすると、他のアプリでリンクをタップしたときにこのアプリが受け取り、「標準の開き方」やアプリごとの設定で開きます",
+            text = "デフォルトにすると、他のアプリでリンクをタップしたときにこのアプリが受け取り、「標準の開き方」やアプリごとの設定で開きます。リンクが元のアプリの中で開かれてしまう場合は、そのアプリの設定で「リンクをアプリ内で開く」をオフにしてください",
             style = MaterialTheme.typography.bodySmall
           )
           Spacer(modifier = Modifier.height(12.dp))
