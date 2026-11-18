@@ -137,6 +137,7 @@ private fun HomeContent(
   val providers = remember { CustomTabProviders.findProviders(context) }
   var mode by remember { mutableStateOf(LinkPreferences.getMode(context)) }
   var providerPackage by remember { mutableStateOf(LinkPreferences.getProviderPackage(context)) }
+  var secondaryPackage by remember { mutableStateOf(LinkPreferences.getSecondaryProviderPackage(context)) }
   var isDefault by remember { mutableStateOf(DefaultBrowser.isDefaultBrowser(context)) }
   val versionName = remember {
     try {
@@ -357,6 +358,38 @@ private fun HomeContent(
               mode = OpenMode.WEB_HEAD
             }
           )
+        }
+      }
+
+      Card(modifier = Modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.padding(16.dp)) {
+          Text(
+            text = "第2のブラウザ",
+            style = MaterialTheme.typography.titleMedium
+          )
+          Text(
+            text = "Custom Tabのメニューに「○○で開く」が追加され、開いているページを別のブラウザで開き直せます",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+          )
+          LinkOptionRow(
+            label = "なし",
+            selected = secondaryPackage == null,
+            onSelect = {
+              LinkPreferences.setSecondaryProviderPackage(context, null)
+              secondaryPackage = null
+            }
+          )
+          providers.forEach { provider ->
+            LinkOptionRow(
+              label = provider.label,
+              selected = secondaryPackage == provider.packageName,
+              onSelect = {
+                LinkPreferences.setSecondaryProviderPackage(context, provider.packageName)
+                secondaryPackage = provider.packageName
+              }
+            )
+          }
         }
       }
 
