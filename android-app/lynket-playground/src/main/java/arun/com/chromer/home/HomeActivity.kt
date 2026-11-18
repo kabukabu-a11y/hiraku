@@ -318,6 +318,13 @@ private fun HomeContent(
               }
             )
           }
+          if (providers.isEmpty()) {
+            Text(
+              text = "※ Custom Tab対応のブラウザ（Chrome等）が見つかりませんでした",
+              style = MaterialTheme.typography.bodySmall,
+              color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+          }
           LinkOptionRow(
             label = "開くたびに選ぶ",
             selected = mode == OpenMode.ASK,
