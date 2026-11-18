@@ -10,8 +10,8 @@ Based on [Lynket](https://github.com/arunkumar9t2/lynket-browser) (GPLv3). Hirak
 
 ## ダウンロード / Download
 
-[Releases](https://github.com/kabukabu-a11y/lynket-browser/releases) から最新のAPKをダウンロードしてください。
-Download the latest APK from [Releases](https://github.com/kabukabu-a11y/lynket-browser/releases).
+[Releases](https://github.com/kabukabu-a11y/hiraku/releases) から最新のAPKをダウンロードしてください。
+Download the latest APK from [Releases](https://github.com/kabukabu-a11y/hiraku/releases).
 
 インストール後、Hirakuをデフォルトブラウザに設定すると、他のアプリのリンクをHirakuが受け取るようになります。
 After installing, set Hiraku as your default browser so links from other apps are routed to it.
@@ -31,8 +31,8 @@ After installing, set Hiraku as your default browser so links from other apps ar
   **Bubbles**: park links as floating bubbles; tap to open in the overlay, long-press to peek.
 - **広告ブロック**：オープンソースのブロックリスト（pgl.yoyo.org の ad server list 等）を使ったドメイン遮断。バーにブロック件数が出て、その場でON/OFFできます
   **Ad blocking**: domain blocking using open-source lists (pgl.yoyo.org ad server list and major ad networks), with a live blocked count in the bar.
-- **その他**：記事モード、タブと履歴、デスクトップサイト切替、細かい設定を集約した設定画面
-  **And more**: article mode, tabs & history, desktop site toggle, and a dedicated settings screen.
+- **その他**：記事モード、タブと履歴、デスクトップサイト切替、細かい設定を集約した設定画面、日本語／英語の表示切替（設定 → 言語）
+  **And more**: article mode, tabs & history, desktop site toggle, a dedicated settings screen, and a Japanese / English UI (Settings → Language).
 
 ## 権限について / Permissions
 
