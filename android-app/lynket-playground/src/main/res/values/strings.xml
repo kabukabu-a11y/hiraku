@@ -20,4 +20,137 @@
 
 <resources>
     <string name="app_name">Hiraku</string>
+
+    <!-- Common actions -->
+    <string name="act_back">戻る</string>
+    <string name="act_close">閉じる</string>
+    <string name="act_delete">削除</string>
+    <string name="act_share">共有</string>
+    <string name="act_forward">進む</string>
+
+    <!-- Open methods -->
+    <string name="method_custom_tab_primary">選んだブラウザ（Custom Tab）</string>
+    <string name="method_custom_tab_secondary">2つ目のブラウザ（Custom Tab）</string>
+    <string name="method_normal_primary">選んだブラウザ（通常）</string>
+    <string name="method_normal_secondary">2つ目のブラウザ（通常）</string>
+    <string name="method_custom_tab_system">システム標準（Custom Tab）</string>
+    <string name="method_stay_overlay">アプリに留まる（重ねて表示）</string>
+    <string name="method_bubble">バブル</string>
+    <string name="method_share">共有</string>
+    <string name="method_cancel">キャンセル</string>
+    <string name="method_ask">開くたびに選ぶ</string>
+
+    <!-- Custom Tab menu -->
+    <string name="ct_options">Hiraku のオプション</string>
+    <string name="ct_open_in">%1$s で開く</string>
+
+    <!-- Home -->
+    <string name="home_open_url">URLを開く</string>
+    <string name="home_url_hint">URLまたは検索ワード</string>
+    <string name="home_default_browser">デフォルトブラウザ</string>
+    <string name="home_is_default">このアプリがデフォルトブラウザに設定されています</string>
+    <string name="home_not_default">このアプリはデフォルトブラウザではありません</string>
+    <string name="home_default_desc">デフォルトにすると、他のアプリでリンクをタップしたときにこのアプリが受け取り、「標準の開き方」やアプリごとの設定で開きます。リンクが元のアプリの中で開かれてしまう場合は、そのアプリの設定で「リンクをアプリ内で開く」をオフにしてください</string>
+    <string name="home_set_default">デフォルトに設定</string>
+    <string name="home_open_default_settings">デフォルトアプリ設定を開く</string>
+    <string name="home_default_method">標準の開き方</string>
+    <string name="home_default_method_desc">アプリごとの設定がないリンクは、この方法で開きます</string>
+    <string name="home_browser_primary">第1のブラウザ</string>
+    <string name="home_browser_primary_desc">「選んだブラウザ」で使うブラウザです</string>
+    <string name="home_browser_auto">自動（検出された最初のブラウザ）</string>
+    <string name="home_no_browser">※ Custom Tab対応のブラウザ（Chrome等）が見つかりませんでした</string>
+    <string name="home_browser_secondary">第2のブラウザ</string>
+    <string name="home_browser_secondary_desc">Custom Tabのメニューに「○○で開く」が追加され、開いているページを別のブラウザで開き直せます</string>
+    <string name="home_none">なし</string>
+    <string name="home_tabs_history">タブと履歴</string>
+    <string name="home_tabs">タブ一覧</string>
+    <string name="home_permissions">権限の管理</string>
+    <string name="home_version">バージョン %1$s</string>
+
+    <!-- Per-app rules -->
+    <string name="app_rules_title">アプリごとの設定</string>
+    <string name="app_rules_search">アプリを検索</string>
+    <string name="app_rules_default_note">設定がないアプリは「標準（%1$s）」で開きます</string>
+    <string name="app_rules_default_badge">標準</string>
+    <string name="app_rules_default_option">標準（%1$s）</string>
+
+    <!-- Settings -->
+    <string name="settings_title">設定</string>
+    <string name="settings_display">表示</string>
+    <string name="settings_bar_position">バーの位置</string>
+    <string name="settings_bar_bottom">下</string>
+    <string name="settings_bar_top">上</string>
+    <string name="settings_blur">周りのぼかし</string>
+    <string name="settings_blur_desc">重ねて表示のとき、後ろの画面をぼかします</string>
+    <string name="settings_hide_bar">下スクロールでバーを隠す</string>
+    <string name="settings_hide_bar_desc">アプリ内ブラウザで、ページを下にスクロールするとバーが隠れます</string>
+    <string name="settings_browsing">ブラウジング</string>
+    <string name="settings_adblock_desc">広告・トラッキングのドメインへの通信を止めます（pgl.yoyo.org等のオープンソースのリストを使用）。バーや︙メニューからも切り替えできます</string>
+    <string name="settings_preview">プレビュー（チラ見せ）</string>
+    <string name="settings_preview_desc">バブルの長押しや開き方を選ぶ画面で、ページのプレビューを表示します</string>
+    <string name="settings_chooser">選択画面</string>
+    <string name="settings_chooser_desc">「開くたびに選ぶ」の画面や「別の方法で開く」に出る項目の順番と表示を変えられます</string>
+    <string name="settings_language">言語</string>
+    <string name="lang_system">システム既定</string>
+    <string name="lang_ja">日本語</string>
+    <string name="settings_language_desc">Android 13以降で、アプリの表示言語を端末とは別に設定できます</string>
+    <string name="settings_notifications">通知</string>
+    <string name="settings_notifications_desc">バブルやオーバーレイ表示中は、状態を知らせる通知を表示します。通知が出ない場合はこちらから確認してください</string>
+    <string name="settings_open_notification_settings">通知設定を開く</string>
+    <string name="settings_data">データ</string>
+    <string name="settings_data_cleared">履歴とタブを消去しました</string>
+    <string name="settings_clear_data">履歴とタブをすべて消去</string>
+
+    <!-- Setup -->
+    <string name="setup_title">セットアップ</string>
+    <string name="setup_intro">このアプリが使う権限を確認します。あとからホーム画面の「権限の管理」でも変更できます。</string>
+    <string name="setup_overlay">上に重ねて表示</string>
+    <string name="setup_overlay_desc">オーバーレイ表示とWeb heads（バブル）に必要です</string>
+    <string name="setup_default_desc">他のアプリのリンクをこのアプリで受け取れるようになります</string>
+    <string name="setup_set">設定する</string>
+    <string name="setup_notifications_desc">バブルやオーバーレイの状態を通知で知らせます</string>
+    <string name="setup_trouble">うまく許可できないとき</string>
+    <string name="setup_restricted_desc">APKから直接インストールしたアプリは、Androidの「制限付き設定」によって一部の許可がブロックされることがあります。その場合は、設定 → アプリ → Hiraku → 右上の︙メニュー →「制限付き設定を許可」を押してから、もう一度この画面で許可してください。</string>
+    <string name="setup_start">はじめる</string>
+    <string name="setup_allow">許可する</string>
+    <string name="setup_status_granted">状態：許可済み</string>
+    <string name="setup_status_not_set">状態：未設定</string>
+    <string name="setup_done">設定済み</string>
+
+    <!-- Link chooser -->
+    <string name="chooser_title">開き方を選ぶ</string>
+
+    <!-- In-app browser -->
+    <string name="adblock_title">広告ブロック</string>
+    <string name="adblock_on">広告ブロック：オン</string>
+    <string name="adblock_off">広告ブロック：オフ</string>
+    <string name="site_mobile">モバイルサイトに切替</string>
+    <string name="site_desktop">デスクトップサイト</string>
+    <string name="menu_overlay">重ねて表示</string>
+    <string name="menu_other_methods">別の方法で開く</string>
+    <string name="menu_copy_link">リンクをコピー</string>
+    <string name="link_copied">リンクをコピーしました</string>
+
+    <!-- Article mode -->
+    <string name="article_title">記事モード</string>
+    <string name="article_original">元のページ</string>
+    <string name="article_failed">記事を抽出できませんでした</string>
+
+    <!-- History / Tabs -->
+    <string name="history_title">履歴</string>
+    <string name="history_clear_all">すべて消去</string>
+    <string name="history_empty">履歴はまだありません</string>
+    <string name="tabs_title">タブ</string>
+    <string name="tabs_close_all">すべて閉じる</string>
+    <string name="tabs_empty">開いているタブはありません</string>
+
+    <!-- Overlay / bubbles -->
+    <string name="overlay_channel">オーバーレイ表示</string>
+    <string name="overlay_showing">オーバーレイ表示中</string>
+    <string name="overlay_open_primary">選んだブラウザで開く</string>
+    <string name="overlay_minimize">最小化</string>
+    <string name="overlay_open_in_app">アプリ内で開く（全画面）</string>
+    <string name="overlay_settings">Hiraku の設定</string>
+    <string name="overlay_permission_required">重ねて表示には「他のアプリの上に重ねて表示」の許可が必要です</string>
+    <string name="bubbles_count">%1$d個のバブル</string>
 </resources>
