@@ -34,10 +34,14 @@ import android.webkit.WebViewClient
 import androidx.activity.ComponentActivity
 import androidx.activity.OnBackPressedCallback
 import androidx.activity.compose.setContent
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.ArrowForward
@@ -48,6 +52,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
@@ -62,9 +67,13 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.vector.path
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import arun.com.chromer.customtab.CustomTabProviders
+import arun.com.chromer.customtab.LinkPreferences
+import arun.com.chromer.customtab.OpenMode
 import arun.com.chromer.theme.LynketTheme
 
 class BrowserActivity : ComponentActivity() {
@@ -93,9 +102,23 @@ class BrowserActivity : ComponentActivity() {
       return
     }
 
+    val mode = LinkPreferences.getMode(this)
+    if (mode == OpenMode.PROVIDER) {
+      val pkg = LinkPreferences.getProviderPackage(this)
+        ?: CustomTabProviders.getSystemDefaultProvider(this)
+      if (pkg != null && CustomTabProviders.launchCustomTab(this, initialUrl, pkg)) {
+        finish()
+        return
+      }
+    }
+
     setContent {
       LynketTheme {
-        BrowserScreen(initialUrl = initialUrl)
+        if (mode == OpenMode.ASK) {
+          ProviderPickerScreen(url = initialUrl)
+        } else {
+          BrowserScreen(initialUrl = initialUrl)
+        }
       }
     }
   }
@@ -118,6 +141,74 @@ class BrowserActivity : ComponentActivity() {
       return intent.dataString
     }
     return intent.dataString
+  }
+
+  @OptIn(ExperimentalMaterial3Api::class)
+  @Composable
+  private fun ProviderPickerScreen(url: String) {
+    val context = LocalContext.current
+    val providers = remember { CustomTabProviders.findProviders(context) }
+    var useWebView by remember { mutableStateOf(false) }
+
+    if (useWebView || providers.isEmpty()) {
+      BrowserScreen(initialUrl = url)
+      return
+    }
+
+    Scaffold(
+      topBar = {
+        TopAppBar(
+          title = { Text(text = "開き方を選ぶ") },
+          navigationIcon = {
+            IconButton(onClick = { finish() }) {
+              Icon(
+                imageVector = Icons.Filled.Close,
+                contentDescription = "Close"
+              )
+            }
+          }
+        )
+      }
+    ) { innerPadding ->
+      LazyColumn(
+        modifier = Modifier
+          .fillMaxSize()
+          .padding(innerPadding)
+      ) {
+        items(providers, key = { it.packageName }) { provider ->
+          Row(
+            modifier = Modifier
+              .fillMaxWidth()
+              .clickable {
+                if (CustomTabProviders.launchCustomTab(this@BrowserActivity, url, provider.packageName)) {
+                  finish()
+                } else {
+                  useWebView = true
+                }
+              }
+              .padding(16.dp)
+          ) {
+            Text(
+              text = provider.label,
+              style = MaterialTheme.typography.bodyLarge
+            )
+          }
+        }
+        item {
+          Row(
+            modifier = Modifier
+              .fillMaxWidth()
+              .clickable { useWebView = true }
+              .padding(16.dp)
+          ) {
+            Text(
+              text = "アプリ内ブラウザ",
+              style = MaterialTheme.typography.bodyLarge
+            )
+          }
+        }
+      }
+    }
   }
 
   @OptIn(ExperimentalMaterial3Api::class)
