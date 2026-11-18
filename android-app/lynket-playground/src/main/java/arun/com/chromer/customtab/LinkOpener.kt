@@ -31,7 +31,8 @@ import androidx.browser.customtabs.CustomTabsIntent
 enum class OpenMode {
   IN_APP,
   ASK,
-  PROVIDER
+  PROVIDER,
+  OVERLAY
 }
 
 object LinkPreferences {
@@ -128,3 +129,4 @@ object CustomTabProviders {
     }
   }
 }
+
