@@ -78,7 +78,9 @@ import arun.com.chromer.bubbles.BubbleService
 import arun.com.chromer.customtab.CustomTabProviders
 import arun.com.chromer.customtab.LinkPreferences
 import arun.com.chromer.customtab.OpenMode
+import arun.com.chromer.history.HistoryStore
 import arun.com.chromer.overlay.OverlayService
+import arun.com.chromer.tabs.TabStore
 import arun.com.chromer.theme.LynketTheme
 
 class BrowserActivity : ComponentActivity() {
@@ -394,6 +396,12 @@ class BrowserActivity : ComponentActivity() {
                   }
                   canGoBack = view?.canGoBack() == true
                   canGoForward = view?.canGoForward() == true
+                  val finishedUrl = view?.url ?: url
+                  if (finishedUrl != null && (finishedUrl.startsWith("http://") || finishedUrl.startsWith("https://"))) {
+                    val pageTitle = view?.title ?: finishedUrl
+                    HistoryStore.record(context, finishedUrl, pageTitle)
+                    TabStore.upsert(context, finishedUrl, pageTitle)
+                  }
                 }
               }
               webChromeClient = object : WebChromeClient() {
