@@ -38,7 +38,9 @@ import android.graphics.PixelFormat
 import android.graphics.drawable.GradientDrawable
 import android.net.Uri
 import android.os.Build
+import android.os.Handler
 import android.os.IBinder
+import android.os.Looper
 import android.provider.Settings
 import android.text.TextUtils
 import android.view.Gravity
@@ -65,7 +67,9 @@ import arun.com.chromer.customtab.LinkPreferences
 import arun.com.chromer.customtab.OpenMethod
 import arun.com.chromer.history.HistoryStore
 import arun.com.chromer.home.HomeActivity
+import arun.com.chromer.link.LinkHandlerActivity
 import arun.com.chromer.settings.SettingsActivity
+import java.util.concurrent.atomic.AtomicInteger
 
 /**
  * The overlay browser: a near-full-screen floating window (device
@@ -94,7 +98,9 @@ class OverlayService : Service() {
   private var currentUrl: String = ""
   private var desktopMode: Boolean = false
   private var adBlockEnabled: Boolean = true
-  private var blockedCount: Int = 0
+  // Incremented from WebView request threads; UI updates go to main.
+  private val blockedCount = AtomicInteger(0)
+  private val mainHandler = Handler(Looper.getMainLooper())
 
   override fun onCreate() {
     super.onCreate()
@@ -183,7 +189,7 @@ class OverlayService : Service() {
     isMinimized = false
     desktopMode = false
     adBlockEnabled = LinkPreferences.isAdBlockEnabled(this)
-    blockedCount = 0
+    blockedCount.set(0)
     AdBlocker.ensureLoaded(this)
 
     val cornerRadius = dp(28).toFloat()
@@ -233,8 +239,10 @@ class OverlayService : Service() {
         ): WebResourceResponse? {
           val url = request?.url?.toString()
           if (adBlockEnabled && AdBlocker.isAdUrl(url)) {
-            blockedCount++
-            updateShield()
+            // This callback runs on a background thread: never touch
+            // views here, post the badge update to the main thread.
+            blockedCount.incrementAndGet()
+            mainHandler.post { updateShield() }
             return AdBlocker.emptyResponse()
           }
           return super.shouldInterceptRequest(view, request)
@@ -263,7 +271,7 @@ class OverlayService : Service() {
             currentUrl = url
             urlView?.text = url
           }
-          blockedCount = 0
+          blockedCount.set(0)
           updateShield()
           updateNavigationButtons(view)
         }
@@ -400,7 +408,7 @@ class OverlayService : Service() {
       setBackgroundColor(BAR_COLOR)
       layoutParams = LinearLayout.LayoutParams(
         ViewGroup.LayoutParams.MATCH_PARENT,
-        dp(56)
+        dp(64)
       )
       setPadding(dp(4), 0, dp(4), 0)
     }
@@ -429,7 +437,7 @@ class OverlayService : Service() {
       text = currentUrl
       isSingleLine = true
       ellipsize = TextUtils.TruncateAt.END
-      textSize = 13f
+      textSize = 14f
     }
     val url = TextView(this).apply {
       setTextColor(0xFFBDC1C6.toInt())
@@ -444,14 +452,14 @@ class OverlayService : Service() {
     val shield = TextView(this).apply {
       text = "AD"
       setTextColor(Color.WHITE)
-      textSize = 10f
+      textSize = 12f
       gravity = Gravity.CENTER
       background = GradientDrawable().apply {
         shape = GradientDrawable.RECTANGLE
         cornerRadius = dp(8).toFloat()
         setColor(0xFF5F6368.toInt())
       }
-      layoutParams = LinearLayout.LayoutParams(dp(30), dp(22)).apply {
+      layoutParams = LinearLayout.LayoutParams(dp(38), dp(28)).apply {
         marginStart = dp(2)
         marginEnd = dp(2)
       }
@@ -499,9 +507,9 @@ class OverlayService : Service() {
     return TextView(this).apply {
       text = label
       setTextColor(Color.WHITE)
-      textSize = 16f
+      textSize = 19f
       gravity = Gravity.CENTER
-      layoutParams = LinearLayout.LayoutParams(dp(40), ViewGroup.LayoutParams.MATCH_PARENT)
+      layoutParams = LinearLayout.LayoutParams(dp(48), ViewGroup.LayoutParams.MATCH_PARENT)
     }
   }
 
@@ -511,8 +519,9 @@ class OverlayService : Service() {
     drawable?.setColor(if (adBlockEnabled) 0xFF8AB4F8.toInt() else 0xFF5F6368.toInt())
     chip.setTextColor(if (adBlockEnabled) 0xFF202124.toInt() else Color.WHITE)
     val count = shieldCountView ?: return
-    if (blockedCount > 0) {
-      count.text = blockedCount.toString()
+    val blocked = blockedCount.get()
+    if (blocked > 0) {
+      count.text = blocked.toString()
       count.visibility = View.VISIBLE
     } else {
       count.visibility = View.GONE
@@ -571,21 +580,22 @@ class OverlayService : Service() {
     val menu = popup.menu
     val forwardItem = menu.add(0, MENU_FORWARD, 0, "進む")
     forwardItem.isEnabled = webView?.canGoForward() == true
+    menu.add(0, MENU_OPEN_PRIMARY, 1, "選んだブラウザで開く")
     menu.add(
       0,
       MENU_DESKTOP,
-      1,
+      2,
       if (desktopMode) "✓ デスクトップサイト" else "デスクトップサイト"
     )
     menu.add(
       0,
       MENU_ADBLOCK,
-      2,
+      3,
       if (adBlockEnabled) "✓ 広告ブロック" else "広告ブロック"
     )
-    menu.add(0, MENU_MINIMIZE, 3, "最小化")
-    menu.add(0, MENU_FULLSCREEN, 4, "アプリ内で開く（全画面）")
-    val sub = menu.addSubMenu(0, MENU_OTHER_METHODS, 5, "別の方法で開く")
+    menu.add(0, MENU_MINIMIZE, 4, "最小化")
+    menu.add(0, MENU_FULLSCREEN, 5, "アプリ内で開く（全画面）")
+    val sub = menu.addSubMenu(0, MENU_OTHER_METHODS, 6, "別の方法で開く")
     val methods = listOf(
       OpenMethod.CUSTOM_TAB_PRIMARY,
       OpenMethod.CUSTOM_TAB_SECONDARY,
@@ -598,9 +608,9 @@ class OverlayService : Service() {
     for ((index, method) in methods.withIndex()) {
       sub.add(1, MENU_METHOD_BASE + index, index, method.label)
     }
-    menu.add(0, MENU_COPY, 6, "リンクをコピー")
-    menu.add(0, MENU_SHARE, 7, "共有")
-    menu.add(0, MENU_SETTINGS, 8, "Hiraku の設定")
+    menu.add(0, MENU_COPY, 7, "リンクをコピー")
+    menu.add(0, MENU_SHARE, 8, "共有")
+    menu.add(0, MENU_SETTINGS, 9, "Hiraku の設定")
 
     popup.setOnMenuItemClickListener { item: MenuItem ->
       when {
@@ -617,6 +627,23 @@ class OverlayService : Service() {
         }
         item.itemId == MENU_FORWARD -> {
           if (webView?.canGoForward() == true) webView?.goForward()
+          true
+        }
+        item.itemId == MENU_OPEN_PRIMARY -> {
+          // Route through the handler activity so the chosen browser
+          // opens as a real Custom Tab (needs an activity context).
+          val url = currentUrl
+          closeOverlay()
+          try {
+            startActivity(
+              LinkHandlerActivity.createDispatchIntent(
+                this,
+                url,
+                OpenMethod.CUSTOM_TAB_PRIMARY
+              )
+            )
+          } catch (_: Exception) {
+          }
           true
         }
         item.itemId == MENU_DESKTOP -> {
@@ -726,6 +753,7 @@ class OverlayService : Service() {
       "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
 
     private const val MENU_FORWARD = 1
+    private const val MENU_OPEN_PRIMARY = 10
     private const val MENU_DESKTOP = 2
     private const val MENU_ADBLOCK = 3
     private const val MENU_MINIMIZE = 4
