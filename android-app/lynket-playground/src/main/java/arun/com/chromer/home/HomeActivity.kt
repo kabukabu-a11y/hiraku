@@ -49,10 +49,14 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -73,8 +77,19 @@ import arun.com.chromer.customtab.LinkPreferences
 import arun.com.chromer.customtab.OpenMode
 import arun.com.chromer.di.HasInjector
 import arun.com.chromer.history.HistoryActivity
+import arun.com.chromer.setup.SetupActivity
+import arun.com.chromer.setup.SetupPreferences
 import arun.com.chromer.tabs.TabsActivity
 import arun.com.chromer.theme.LynketTheme
+import androidx.compose.foundation.layout.width
+import androidx.compose.ui.text.style.TextOverflow
+import java.net.HttpURLConnection
+import java.net.URL
+import java.net.URLEncoder
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
+import org.json.JSONArray
 import com.deliveryhero.whetstone.activity.ContributesActivityInjector
 
 @ContributesActivityInjector
@@ -96,6 +111,9 @@ class HomeActivity : ComponentActivity(), HasInjector {
         }
       }
     }
+    if (!SetupPreferences.isCompleted(this)) {
+      startActivity(Intent(this, SetupActivity::class.java))
+    }
   }
 }
 
@@ -105,6 +123,16 @@ private fun HomeContent(
   onOpenUrl: (String) -> Unit
 ) {
   var urlInput by remember { mutableStateOf("") }
+  var suggestions by remember { mutableStateOf<List<String>>(emptyList()) }
+  LaunchedEffect(urlInput) {
+    val q = urlInput.trim()
+    if (q.isBlank() || (!q.contains(" ") && q.contains("."))) {
+      suggestions = emptyList()
+      return@LaunchedEffect
+    }
+    delay(300)
+    suggestions = fetchSearchSuggestions(q)
+  }
   val context = LocalContext.current
   val providers = remember { CustomTabProviders.findProviders(context) }
   var mode by remember { mutableStateOf(LinkPreferences.getMode(context)) }
@@ -163,7 +191,7 @@ private fun HomeContent(
             OutlinedTextField(
               value = urlInput,
               onValueChange = { urlInput = it },
-              label = { Text(text = "URL") },
+              label = { Text(text = "URLまたは検索ワード") },
               singleLine = true,
               keyboardOptions = KeyboardOptions(
                 keyboardType = KeyboardType.Uri,
@@ -186,6 +214,27 @@ private fun HomeContent(
               }
             ) {
               Text(text = "Open")
+            }
+          }
+          if (suggestions.isNotEmpty()) {
+            Column {
+              suggestions.take(5).forEach { suggestion ->
+                Row(
+                  modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { onOpenUrl(suggestion) }
+                    .padding(vertical = 10.dp),
+                  verticalAlignment = Alignment.CenterVertically
+                ) {
+                  Icon(Icons.Filled.Search, contentDescription = null)
+                  Spacer(modifier = Modifier.width(8.dp))
+                  Text(
+                    text = suggestion,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                  )
+                }
+              }
             }
           }
         }
@@ -326,6 +375,13 @@ private fun HomeContent(
         }
       }
 
+      OutlinedButton(
+        onClick = { context.startActivity(Intent(context, SetupActivity::class.java)) },
+        modifier = Modifier.fillMaxWidth()
+      ) {
+        Text("権限の管理")
+      }
+
       Text(
         text = "バージョン ${versionName ?: "-"}（開発中）",
         style = MaterialTheme.typography.bodySmall,
@@ -356,3 +412,30 @@ private fun LinkOptionRow(
   }
 }
 
+
+private suspend fun fetchSearchSuggestions(query: String): List<String> =
+  withContext(Dispatchers.IO) {
+    try {
+      val encoded = URLEncoder.encode(query, "UTF-8")
+      val connection = URL(
+        "https://suggestqueries.google.com/complete/search?client=firefox&q=$encoded"
+      ).openConnection() as HttpURLConnection
+      connection.connectTimeout = 3000
+      connection.readTimeout = 3000
+      connection.setRequestProperty("User-Agent", "Mozilla/5.0 (Android)")
+      val text = connection.inputStream.bufferedReader().use { it.readText() }
+      connection.disconnect()
+      val root = JSONArray(text)
+      val array = root.optJSONArray(1) ?: return@withContext emptyList()
+      val result = ArrayList<String>()
+      for (i in 0 until array.length()) {
+        val item = array.optString(i)
+        if (item.isNotBlank()) {
+          result.add(item)
+        }
+      }
+      result
+    } catch (_: Exception) {
+      emptyList()
+    }
+  }
