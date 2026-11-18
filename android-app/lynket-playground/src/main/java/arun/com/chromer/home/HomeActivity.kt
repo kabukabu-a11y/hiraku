@@ -108,6 +108,13 @@ private fun HomeContent(
   var mode by remember { mutableStateOf(LinkPreferences.getMode(context)) }
   var providerPackage by remember { mutableStateOf(LinkPreferences.getProviderPackage(context)) }
   var isDefault by remember { mutableStateOf(DefaultBrowser.isDefaultBrowser(context)) }
+  val versionName = remember {
+    try {
+      context.packageManager.getPackageInfo(context.packageName, 0).versionName
+    } catch (_: Exception) {
+      null
+    }
+  }
   val requestLauncher = rememberLauncherForActivityResult(
     ActivityResultContracts.StartActivityForResult()
   ) {
@@ -294,6 +301,12 @@ private fun HomeContent(
           )
         }
       }
+      Text(
+        text = "バージョン ${versionName ?: "-"}（開発中）",
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.align(Alignment.CenterHorizontally)
+      )
     }
   }
 }
