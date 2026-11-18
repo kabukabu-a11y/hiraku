@@ -60,6 +60,8 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import arun.com.chromer.R
+import androidx.compose.ui.res.stringResource
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -188,7 +190,7 @@ private fun HomeContent(
       Card(modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(16.dp)) {
           Text(
-            text = "URLを開く",
+            text = stringResource(R.string.home_open_url),
             style = MaterialTheme.typography.titleMedium
           )
           Spacer(modifier = Modifier.height(12.dp))
@@ -200,7 +202,7 @@ private fun HomeContent(
             OutlinedTextField(
               value = urlInput,
               onValueChange = { urlInput = it },
-              label = { Text(text = "URLまたは検索ワード") },
+              label = { Text(text = stringResource(R.string.home_url_hint)) },
               singleLine = true,
               keyboardOptions = KeyboardOptions(
                 keyboardType = KeyboardType.Uri,
@@ -252,20 +254,20 @@ private fun HomeContent(
       Card(modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(16.dp)) {
           Text(
-            text = "デフォルトブラウザ",
+            text = stringResource(R.string.home_default_browser),
             style = MaterialTheme.typography.titleMedium
           )
           Spacer(modifier = Modifier.height(8.dp))
           Text(
             text = if (isDefault) {
-              "このアプリがデフォルトブラウザに設定されています"
+              stringResource(R.string.home_is_default)
             } else {
-              "このアプリはデフォルトブラウザではありません"
+              stringResource(R.string.home_not_default)
             }
           )
           Spacer(modifier = Modifier.height(4.dp))
           Text(
-            text = "デフォルトにすると、他のアプリでリンクをタップしたときにこのアプリが受け取り、「標準の開き方」やアプリごとの設定で開きます。リンクが元のアプリの中で開かれてしまう場合は、そのアプリの設定で「リンクをアプリ内で開く」をオフにしてください",
+            text = stringResource(R.string.home_default_desc),
             style = MaterialTheme.typography.bodySmall
           )
           Spacer(modifier = Modifier.height(12.dp))
@@ -282,7 +284,7 @@ private fun HomeContent(
                 }
               }
             ) {
-              Text(text = "デフォルトに設定")
+              Text(text = stringResource(R.string.home_set_default))
             }
           } else {
             OutlinedButton(
@@ -293,7 +295,7 @@ private fun HomeContent(
                 }
               }
             ) {
-              Text(text = "デフォルトアプリ設定を開く")
+              Text(text = stringResource(R.string.home_open_default_settings))
             }
           }
         }
@@ -302,17 +304,17 @@ private fun HomeContent(
       Card(modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(16.dp)) {
           Text(
-            text = "標準の開き方",
+            text = stringResource(R.string.home_default_method),
             style = MaterialTheme.typography.titleMedium
           )
           Text(
-            text = "アプリごとの設定がないリンクは、この方法で開きます",
+            text = stringResource(R.string.home_default_method_desc),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
           )
           for (method in OpenMethod.CHOICES) {
             LinkOptionRow(
-              label = method.label,
+              label = stringResource(method.labelRes),
               selected = defaultMethod == method,
               onSelect = {
                 LinkPreferences.setDefaultMethod(context, method)
@@ -321,7 +323,7 @@ private fun HomeContent(
             )
           }
           LinkOptionRow(
-            label = OpenMethod.ASK.label,
+            label = stringResource(OpenMethod.ASK.labelRes),
             selected = defaultMethod == OpenMethod.ASK,
             onSelect = {
               LinkPreferences.setDefaultMethod(context, OpenMethod.ASK)
@@ -334,16 +336,16 @@ private fun HomeContent(
       Card(modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(16.dp)) {
           Text(
-            text = "第1のブラウザ",
+            text = stringResource(R.string.home_browser_primary),
             style = MaterialTheme.typography.titleMedium
           )
           Text(
-            text = "「選んだブラウザ」で使うブラウザです",
+            text = stringResource(R.string.home_browser_primary_desc),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
           )
           LinkOptionRow(
-            label = "自動（検出された最初のブラウザ）",
+            label = stringResource(R.string.home_browser_auto),
             selected = providerPackage == null,
             onSelect = {
               LinkPreferences.setProviderPackage(context, null)
@@ -363,7 +365,7 @@ private fun HomeContent(
           }
           if (providers.isEmpty()) {
             Text(
-              text = "※ Custom Tab対応のブラウザ（Chrome等）が見つかりませんでした",
+              text = stringResource(R.string.home_no_browser),
               style = MaterialTheme.typography.bodySmall,
               color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -374,16 +376,16 @@ private fun HomeContent(
       Card(modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(16.dp)) {
           Text(
-            text = "第2のブラウザ",
+            text = stringResource(R.string.home_browser_secondary),
             style = MaterialTheme.typography.titleMedium
           )
           Text(
-            text = "Custom Tabのメニューに「○○で開く」が追加され、開いているページを別のブラウザで開き直せます",
+            text = stringResource(R.string.home_browser_secondary_desc),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
           )
           LinkOptionRow(
-            label = "なし",
+            label = stringResource(R.string.home_none),
             selected = secondaryPackage == null,
             onSelect = {
               LinkPreferences.setSecondaryProviderPackage(context, null)
@@ -408,7 +410,7 @@ private fun HomeContent(
         onClick = { context.startActivity(Intent(context, AppRulesActivity::class.java)) },
         modifier = Modifier.fillMaxWidth()
       ) {
-        Text("アプリごとの設定")
+        Text(stringResource(R.string.app_rules_title))
       }
 
       Card(modifier = Modifier.fillMaxWidth()) {
@@ -417,18 +419,18 @@ private fun HomeContent(
           verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
           Text(
-            text = "タブと履歴",
+            text = stringResource(R.string.home_tabs_history),
             style = MaterialTheme.typography.titleMedium
           )
           Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Button(
               onClick = { context.startActivity(Intent(context, TabsActivity::class.java)) },
               modifier = Modifier.weight(1f)
-            ) { Text("タブ一覧") }
+            ) { Text(stringResource(R.string.home_tabs)) }
             OutlinedButton(
               onClick = { context.startActivity(Intent(context, HistoryActivity::class.java)) },
               modifier = Modifier.weight(1f)
-            ) { Text("履歴") }
+            ) { Text(stringResource(R.string.history_title)) }
           }
         }
       }
@@ -438,18 +440,18 @@ private fun HomeContent(
           onClick = { context.startActivity(Intent(context, SettingsActivity::class.java)) },
           modifier = Modifier.weight(1f)
         ) {
-          Text("設定")
+          Text(stringResource(R.string.settings_title))
         }
         OutlinedButton(
           onClick = { context.startActivity(Intent(context, SetupActivity::class.java)) },
           modifier = Modifier.weight(1f)
         ) {
-          Text("権限の管理")
+          Text(stringResource(R.string.home_permissions))
         }
       }
 
       Text(
-        text = "バージョン ${versionName ?: "-"}",
+        text = stringResource(R.string.home_version, versionName ?: "-"),
         style = MaterialTheme.typography.bodySmall,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
         modifier = Modifier.align(Alignment.CenterHorizontally)
