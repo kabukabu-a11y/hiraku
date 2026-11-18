@@ -95,6 +95,8 @@ private fun SettingsScreen(onBack: () -> Unit) {
   var adBlock by remember { mutableStateOf(LinkPreferences.isAdBlockEnabled(context)) }
   var preview by remember { mutableStateOf(LinkPreferences.isPreviewEnabled(context)) }
   var language by remember { mutableStateOf(LinkPreferences.getLanguage(context)) }
+  var chooserOrder by remember { mutableStateOf(LinkPreferences.getChooserOrder(context)) }
+  var hiddenMethods by remember { mutableStateOf(LinkPreferences.getHiddenMethods(context)) }
 
   Scaffold(
     topBar = {
@@ -176,6 +178,60 @@ private fun SettingsScreen(onBack: () -> Unit) {
             preview = it
           }
         )
+      }
+
+      SettingsCard(title = "選択画面") {
+        Text(
+          text = "「開くたびに選ぶ」の画面や「別の方法で開く」に出る項目の順番と表示を変えられます",
+          style = MaterialTheme.typography.bodySmall,
+          color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Spacer(modifier = Modifier.height(8.dp))
+        chooserOrder.forEachIndexed { index, method ->
+          Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.fillMaxWidth()
+          ) {
+            Text(
+              text = method.label,
+              modifier = Modifier.weight(1f),
+              style = MaterialTheme.typography.bodyMedium
+            )
+            IconButton(
+              enabled = index > 0,
+              onClick = {
+                val newOrder = chooserOrder.toMutableList()
+                val tmp = newOrder[index - 1]
+                newOrder[index - 1] = newOrder[index]
+                newOrder[index] = tmp
+                LinkPreferences.setChooserOrder(context, newOrder)
+                chooserOrder = newOrder
+              }
+            ) {
+              Text("↑")
+            }
+            IconButton(
+              enabled = index < chooserOrder.lastIndex,
+              onClick = {
+                val newOrder = chooserOrder.toMutableList()
+                val tmp = newOrder[index + 1]
+                newOrder[index + 1] = newOrder[index]
+                newOrder[index] = tmp
+                LinkPreferences.setChooserOrder(context, newOrder)
+                chooserOrder = newOrder
+              }
+            ) {
+              Text("↓")
+            }
+            Switch(
+              checked = method !in hiddenMethods,
+              onCheckedChange = { visible ->
+                LinkPreferences.setMethodHidden(context, method, !visible)
+                hiddenMethods = LinkPreferences.getHiddenMethods(context)
+              }
+            )
+          }
+        }
       }
 
       SettingsCard(title = "言語") {
