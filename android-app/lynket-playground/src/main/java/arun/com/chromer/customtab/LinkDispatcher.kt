@@ -28,6 +28,7 @@ import arun.com.chromer.R
 import arun.com.chromer.browser.BrowserActivity
 import arun.com.chromer.bubbles.BubbleService
 import arun.com.chromer.overlay.OverlayService
+import arun.com.chromer.share.SharePickerActivity
 
 /**
  * Executes an [OpenMethod] for a URL. Browser-based methods need an
@@ -39,12 +40,12 @@ object LinkDispatcher {
   private fun overlayPermissionMessage(context: Context): String =
     context.getString(R.string.overlay_permission_required)
 
-  fun open(activity: Activity, url: String, method: OpenMethod) {
+  fun open(activity: Activity, url: String, method: OpenMethod, secret: Boolean = false) {
     when (method) {
       OpenMethod.CUSTOM_TAB_PRIMARY -> {
         val pkg = CustomTabProviders.resolveProvider(activity)
         if (pkg == null || !CustomTabProviders.launchCustomTab(activity, url, pkg)) {
-          openInApp(activity, url)
+          openInApp(activity, url, secret)
         }
       }
       OpenMethod.CUSTOM_TAB_SECONDARY -> {
@@ -54,14 +55,14 @@ object LinkDispatcher {
         ) {
           val pkg = CustomTabProviders.resolveProvider(activity)
           if (pkg == null || !CustomTabProviders.launchCustomTab(activity, url, pkg)) {
-            openInApp(activity, url)
+            openInApp(activity, url, secret)
           }
         }
       }
       OpenMethod.NORMAL_PRIMARY -> {
         val pkg = CustomTabProviders.resolveProvider(activity)
         if (pkg == null || !CustomTabProviders.launchNormalBrowser(activity, url, pkg)) {
-          openInApp(activity, url)
+          openInApp(activity, url, secret)
         }
       }
       OpenMethod.NORMAL_SECONDARY -> {
@@ -71,7 +72,7 @@ object LinkDispatcher {
         ) {
           val pkg = CustomTabProviders.resolveProvider(activity)
           if (pkg == null || !CustomTabProviders.launchNormalBrowser(activity, url, pkg)) {
-            openInApp(activity, url)
+            openInApp(activity, url, secret)
           }
         }
       }
@@ -80,25 +81,25 @@ object LinkDispatcher {
           ?.takeIf { it != activity.packageName }
           ?: CustomTabProviders.resolveProvider(activity)
         if (pkg == null || !CustomTabProviders.launchCustomTab(activity, url, pkg)) {
-          openInApp(activity, url)
+          openInApp(activity, url, secret)
         }
       }
-      OpenMethod.STAY_OVERLAY -> openOverlay(activity, url)
-      OpenMethod.BUBBLE -> openBubble(activity, url)
+      OpenMethod.STAY_OVERLAY -> openOverlay(activity, url, secret = secret)
+      OpenMethod.BUBBLE -> openBubble(activity, url, secret)
       OpenMethod.SHARE -> share(activity, url)
       OpenMethod.CANCEL -> Unit
-      OpenMethod.ASK -> openInApp(activity, url)
+      OpenMethod.ASK -> openInApp(activity, url, secret)
     }
   }
 
   /** Context-only variant used from overlay / bubble services. */
-  fun open(context: Context, url: String, method: OpenMethod) {
+  fun open(context: Context, url: String, method: OpenMethod, secret: Boolean = false) {
     when (method) {
-      OpenMethod.STAY_OVERLAY -> openOverlay(context, url)
-      OpenMethod.BUBBLE -> openBubble(context, url)
+      OpenMethod.STAY_OVERLAY -> openOverlay(context, url, secret = secret)
+      OpenMethod.BUBBLE -> openBubble(context, url, secret)
       OpenMethod.SHARE -> share(context, url)
       OpenMethod.CANCEL -> Unit
-      OpenMethod.ASK -> openInApp(context, url)
+      OpenMethod.ASK -> openInApp(context, url, secret)
       else -> {
         // Browser methods need an activity for Custom Tabs; use the
         // browser's normal mode instead when there is none.
@@ -113,24 +114,29 @@ object LinkDispatcher {
           else -> CustomTabProviders.resolveProvider(context)
         }
         if (pkg == null || !CustomTabProviders.launchNormalBrowser(context, url, pkg)) {
-          openInApp(context, url)
+          openInApp(context, url, secret)
         }
       }
     }
   }
 
-  fun openInApp(context: Context, url: String) {
+  fun openInApp(context: Context, url: String, secret: Boolean = false) {
     try {
       context.startActivity(
-        BrowserActivity.createDirectIntent(context, url)
+        BrowserActivity.createDirectIntent(context, url, secret)
           .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
       )
     } catch (_: Exception) {
     }
   }
 
-  fun openOverlay(context: Context, url: String, peek: Boolean = false) {
-    if (OverlayService.open(context, url, peek)) {
+  fun openOverlay(
+    context: Context,
+    url: String,
+    peek: Boolean = false,
+    secret: Boolean = false
+  ) {
+    if (OverlayService.open(context, url, peek, secret)) {
       return
     }
     Toast.makeText(context, overlayPermissionMessage(context), Toast.LENGTH_LONG).show()
@@ -141,18 +147,35 @@ object LinkDispatcher {
       )
     } catch (_: Exception) {
     }
-    openInApp(context, url)
+    openInApp(context, url, secret)
   }
 
-  fun openBubble(context: Context, url: String) {
-    if (BubbleService.open(context, url)) {
+  fun openBubble(context: Context, url: String, secret: Boolean = false) {
+    if (BubbleService.open(context, url, secret)) {
       return
     }
     Toast.makeText(context, overlayPermissionMessage(context), Toast.LENGTH_LONG).show()
-    openInApp(context, url)
+    openInApp(context, url, secret)
   }
 
   fun share(context: Context, url: String) {
+    // With quick share targets configured, show Hiraku's own sheet
+    // with those apps first (v2.1.0); otherwise the system chooser.
+    if (LinkPreferences.getShareTargets(context).isNotEmpty()) {
+      try {
+        context.startActivity(
+          SharePickerActivity.createIntent(context, url)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        )
+        return
+      } catch (_: Exception) {
+      }
+    }
+    shareSystem(context, url)
+  }
+
+  /** The plain system share chooser. */
+  fun shareSystem(context: Context, url: String) {
     val sendIntent = Intent(Intent.ACTION_SEND).apply {
       type = "text/plain"
       putExtra(Intent.EXTRA_TEXT, url)
