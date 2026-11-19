@@ -438,6 +438,249 @@ object LinkPreferences {
       .remove(KEY_OVERLAY_H)
       .apply()
   }
+
+  // ----- v2.2.0: per-site (domain) rules -----
+
+  private const val KEY_SITE_RULES = "site_rules"
+
+  /** Normalizes a user-typed domain or URL to a bare lowercase host. */
+  fun normalizeHost(raw: String?): String? {
+    if (raw.isNullOrBlank()) return null
+    var host = raw.trim().lowercase()
+    host = host.removePrefix("https://").removePrefix("http://")
+    host = host.substringBefore('/').substringBefore('?').substringBefore('#')
+    host = host.substringAfterLast('@')
+    host = host.substringBefore(':')
+    if (host.isBlank() || !host.contains('.')) return null
+    return host
+  }
+
+  fun getSiteRules(context: Context): Map<String, OpenMethod> {
+    val raw = prefs(context).getString(KEY_SITE_RULES, null) ?: return emptyMap()
+    return try {
+      val obj = JSONObject(raw)
+      val result = LinkedHashMap<String, OpenMethod>()
+      val keys = obj.keys()
+      while (keys.hasNext()) {
+        val key = keys.next()
+        val method = OpenMethod.fromName(obj.optString(key, null))
+        if (method != null && method != OpenMethod.ASK) {
+          result[key] = method
+        }
+      }
+      result
+    } catch (_: Exception) {
+      emptyMap()
+    }
+  }
+
+  fun getSiteRule(context: Context, url: String?): OpenMethod? {
+    val host = try {
+      Uri.parse(url.orEmpty()).host?.lowercase()
+    } catch (_: Exception) {
+      null
+    } ?: return null
+    val rules = getSiteRules(context)
+    rules[host]?.let { return it }
+    // Also try the parent domain (e.g. a rule for example.com applies
+    // to www.example.com), but never collapse to a bare TLD.
+    val parts = host.split('.')
+    if (parts.size > 2) {
+      val parent = parts.drop(1).joinToString(".")
+      rules[parent]?.let { return it }
+    }
+    return null
+  }
+
+  fun setSiteRule(context: Context, host: String, method: OpenMethod?) {
+    val normalized = normalizeHost(host) ?: return
+    val rules = getSiteRules(context).toMutableMap()
+    if (method == null) {
+      rules.remove(normalized)
+    } else {
+      rules[normalized] = method
+    }
+    val obj = JSONObject()
+    for ((domain, m) in rules) {
+      obj.put(domain, m.name)
+    }
+    prefs(context).edit().putString(KEY_SITE_RULES, obj.toString()).apply()
+  }
+
+  /**
+   * Resolution with the URL in hand: per-app rule first, then the
+   * per-site rule for the URL's host, then the standard method.
+   */
+  fun resolveMethodForUrl(context: Context, referrerPackage: String?, url: String): OpenMethod {
+    return getAppRule(context, referrerPackage)
+      ?: getSiteRule(context, url)
+      ?: getDefaultMethod(context)
+  }
+
+  // ----- v2.2.0: browsing display preferences -----
+
+  private const val KEY_TEXT_ZOOM = "text_zoom"
+  private const val KEY_FORCE_DARK = "force_dark_pages"
+  private const val KEY_DESKTOP_DEFAULT = "desktop_default"
+
+  /** WebView text zoom in percent (100 = page default). */
+  fun getTextZoom(context: Context): Int {
+    return prefs(context).getInt(KEY_TEXT_ZOOM, 100)
+  }
+
+  fun setTextZoom(context: Context, percent: Int) {
+    prefs(context).edit().putInt(KEY_TEXT_ZOOM, percent).apply()
+  }
+
+  /** Force dark styling for web content where the OS allows it. */
+  fun isForceDark(context: Context): Boolean {
+    return prefs(context).getBoolean(KEY_FORCE_DARK, false)
+  }
+
+  fun setForceDark(context: Context, enabled: Boolean) {
+    prefs(context).edit().putBoolean(KEY_FORCE_DARK, enabled).apply()
+  }
+
+  /** Start browser / overlay sessions in desktop mode. */
+  fun isDesktopDefault(context: Context): Boolean {
+    return prefs(context).getBoolean(KEY_DESKTOP_DEFAULT, false)
+  }
+
+  fun setDesktopDefault(context: Context, enabled: Boolean) {
+    prefs(context).edit().putBoolean(KEY_DESKTOP_DEFAULT, enabled).apply()
+  }
+
+  // ----- v2.2.0: animation level -----
+
+  private const val KEY_ANIM_LEVEL = "anim_level"
+  const val ANIM_OFF = 0
+  const val ANIM_WEAK = 1
+  const val ANIM_STRONG = 2
+
+  /** 0 = off, 1 = weak (fades only), 2 = strong (springs + stagger). */
+  fun getAnimLevel(context: Context): Int {
+    return prefs(context).getInt(KEY_ANIM_LEVEL, ANIM_STRONG)
+  }
+
+  fun setAnimLevel(context: Context, level: Int) {
+    prefs(context).edit().putInt(KEY_ANIM_LEVEL, level.coerceIn(0, 2)).apply()
+  }
+
+  // ----- v2.2.0: overlay extras -----
+
+  private const val KEY_OVERLAY_FREE_RESIZE = "overlay_free_resize"
+  private const val KEY_OVERLAY_REMEMBER = "overlay_remember_geo"
+  private const val KEY_PASSTHROUGH_TAP = "passthrough_tap_surround"
+
+  /** PC-like resizing from any edge/corner of the overlay window. */
+  fun isOverlayFreeResize(context: Context): Boolean {
+    return prefs(context).getBoolean(KEY_OVERLAY_FREE_RESIZE, true)
+  }
+
+  fun setOverlayFreeResize(context: Context, enabled: Boolean) {
+    prefs(context).edit().putBoolean(KEY_OVERLAY_FREE_RESIZE, enabled).apply()
+  }
+
+  fun isOverlayRemember(context: Context): Boolean {
+    return prefs(context).getBoolean(KEY_OVERLAY_REMEMBER, true)
+  }
+
+  fun setOverlayRemember(context: Context, enabled: Boolean) {
+    prefs(context).edit().putBoolean(KEY_OVERLAY_REMEMBER, enabled).apply()
+  }
+
+  /** Tapping the blurred surround enters "use the app underneath". */
+  fun isPassthroughTapEnabled(context: Context): Boolean {
+    return prefs(context).getBoolean(KEY_PASSTHROUGH_TAP, true)
+  }
+
+  fun setPassthroughTapEnabled(context: Context, enabled: Boolean) {
+    prefs(context).edit().putBoolean(KEY_PASSTHROUGH_TAP, enabled).apply()
+  }
+
+  // ----- v2.2.0: settings backup / restore -----
+
+  /**
+   * Serializes every link preference (methods, rules, display and
+   * privacy settings) into one JSON document for backup files.
+   */
+  fun exportSettings(context: Context): String {
+    val all = prefs(context).all
+    val entries = JSONObject()
+    for ((key, value) in all) {
+      val entry = JSONObject()
+      when (value) {
+        is String -> {
+          entry.put("t", "s")
+          entry.put("v", value)
+        }
+        is Boolean -> {
+          entry.put("t", "b")
+          entry.put("v", value)
+        }
+        is Int -> {
+          entry.put("t", "i")
+          entry.put("v", value)
+        }
+        is Long -> {
+          entry.put("t", "l")
+          entry.put("v", value)
+        }
+        is Float -> {
+          entry.put("t", "f")
+          entry.put("v", value.toDouble())
+        }
+        is Set<*> -> {
+          entry.put("t", "ss")
+          entry.put("v", org.json.JSONArray(value.map { it.toString() }))
+        }
+        else -> continue
+      }
+      entries.put(key, entry)
+    }
+    return JSONObject()
+      .put("app", "hiraku-settings")
+      .put("version", 1)
+      .put("prefs", entries)
+      .toString(2)
+  }
+
+  /** Restores a document produced by [exportSettings]. */
+  fun importSettings(context: Context, json: String): Boolean {
+    return try {
+      val root = JSONObject(json)
+      if (root.optString("app") != "hiraku-settings") return false
+      val entries = root.getJSONObject("prefs")
+      val editor = prefs(context).edit()
+      editor.clear()
+      val keys = entries.keys()
+      while (keys.hasNext()) {
+        val key = keys.next()
+        val entry = entries.getJSONObject(key)
+        when (entry.optString("t")) {
+          "s" -> editor.putString(key, entry.optString("v"))
+          "b" -> editor.putBoolean(key, entry.optBoolean("v"))
+          "i" -> editor.putInt(key, entry.optInt("v"))
+          "l" -> editor.putLong(key, entry.optLong("v"))
+          "f" -> editor.putFloat(key, entry.optDouble("v").toFloat())
+          "ss" -> {
+            val array = entry.optJSONArray("v")
+            val set = HashSet<String>()
+            if (array != null) {
+              for (i in 0 until array.length()) {
+                set.add(array.optString(i))
+              }
+            }
+            editor.putStringSet(key, set)
+          }
+        }
+      }
+      editor.apply()
+      true
+    } catch (_: Exception) {
+      false
+    }
+  }
 }
 
 /**
@@ -472,6 +715,25 @@ fun OpenMethod.displayLabel(context: Context): String {
       appLabel(CustomTabProviders.getSystemDefaultProvider(context))
         ?.let { "$it (Custom Tab)" } ?: base
     else -> base
+  }
+}
+
+/**
+ * The browser package whose real app icon represents this method in
+ * chooser UIs (v2.2.0), or null for the function-style methods
+ * (overlay / bubble / share / cancel), which get simple glyphs.
+ */
+fun OpenMethod.iconPackage(context: Context): String? {
+  return when (this) {
+    OpenMethod.CUSTOM_TAB_PRIMARY, OpenMethod.NORMAL_PRIMARY ->
+      CustomTabProviders.resolveProvider(context)
+    OpenMethod.CUSTOM_TAB_SECONDARY, OpenMethod.NORMAL_SECONDARY ->
+      LinkPreferences.getSecondaryProviderPackage(context)
+    OpenMethod.CUSTOM_TAB_SYSTEM ->
+      CustomTabProviders.getSystemDefaultProvider(context)
+        ?.takeIf { it != context.packageName }
+        ?: CustomTabProviders.resolveProvider(context)
+    else -> null
   }
 }
 

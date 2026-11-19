@@ -102,6 +102,10 @@ class OverlayService : Service() {
   private var layoutParams: WindowManager.LayoutParams? = null
   private var handleView: TextView? = null
   private var handleParams: WindowManager.LayoutParams? = null
+  private var catcherView: View? = null
+  private var findBarView: View? = null
+  private var findBarParams: WindowManager.LayoutParams? = null
+  private var blurWasOn: Boolean = false
 
   private var fullHeight: Int = 0
   private var peekHeight: Int = 0
@@ -203,7 +207,7 @@ class OverlayService : Service() {
     isPeek = startInPeek
     isMinimized = false
     isPassthrough = false
-    desktopMode = false
+    desktopMode = LinkPreferences.isDesktopDefault(this)
     adBlockEnabled = LinkPreferences.isAdBlockEnabled(this)
     blockedCount.set(0)
     AdBlocker.ensureLoaded(this)
@@ -254,6 +258,15 @@ class OverlayService : Service() {
       settings.javaScriptEnabled = true
       settings.domStorageEnabled = true
       settings.loadsImagesAutomatically = true
+      settings.textZoom = LinkPreferences.getTextZoom(this@OverlayService)
+      if (Build.VERSION.SDK_INT >= 33) {
+        settings.isAlgorithmicDarkeningAllowed =
+          LinkPreferences.isForceDark(this@OverlayService)
+      }
+      if (desktopMode) {
+        settings.userAgentString = DESKTOP_UA
+        settings.useWideViewPort = true
+      }
       webViewClient = object : WebViewClient() {
         override fun shouldInterceptRequest(
           view: WebView?,
@@ -450,6 +463,7 @@ class OverlayService : Service() {
       val p = layoutParams ?: return@setOnTouchListener false
       when (event.actionMasked) {
         MotionEvent.ACTION_DOWN -> {
+          setBlurPaused(true)
           gripStartW = p.width
           gripStartH = p.height
           gripRawX = event.rawX
@@ -483,6 +497,7 @@ class OverlayService : Service() {
         }
 
         MotionEvent.ACTION_UP -> {
+          setBlurPaused(false)
           saveGeometry()
           v.performClick()
           true
@@ -490,6 +505,130 @@ class OverlayService : Service() {
 
         else -> false
       }
+    }
+
+    // v2.2.0: PC-like free resizing from the window edges. Thin
+    // invisible strips on the left, right and far edge (the edge
+    // opposite the bar) resize the window; blur pauses while sizing.
+    if (LinkPreferences.isOverlayFreeResize(this)) {
+      val edgeThickness = dp(16)
+      fun edgeGrip(
+        layoutGravity: Int,
+        width: Int,
+        height: Int,
+        onDrag: (dx: Int, dy: Int, p: WindowManager.LayoutParams) -> Unit
+      ) {
+        val strip = View(this).apply {
+          layoutParams = FrameLayout.LayoutParams(width, height).apply {
+            gravity = layoutGravity
+            // Keep the side strips off the bar so its buttons (close
+            // is at the very edge) stay fully tappable.
+            if (height == ViewGroup.LayoutParams.MATCH_PARENT) {
+              if (barOnTop) {
+                topMargin = dp(64)
+              } else {
+                bottomMargin = dp(64)
+              }
+            }
+          }
+        }
+        var startX = 0
+        var startY = 0
+        var startW = 0
+        var startH = 0
+        var startRawX = 0f
+        var startRawY = 0f
+        strip.setOnTouchListener { v, event ->
+          val wm = windowManager ?: return@setOnTouchListener false
+          val r = rootView ?: return@setOnTouchListener false
+          val p = layoutParams ?: return@setOnTouchListener false
+          when (event.actionMasked) {
+            MotionEvent.ACTION_DOWN -> {
+              setBlurPaused(true)
+              startX = p.x
+              startY = p.y
+              startW = p.width
+              startH = p.height
+              startRawX = event.rawX
+              startRawY = event.rawY
+              true
+            }
+
+            MotionEvent.ACTION_MOVE -> {
+              if (isMinimized) {
+                isMinimized = false
+                webView?.visibility = View.VISIBLE
+              }
+              isPeek = false
+              // Re-base on the drag start so onDrag can be pure.
+              p.x = startX
+              p.y = startY
+              p.width = startW
+              p.height = startH
+              onDrag(
+                (event.rawX - startRawX).toInt(),
+                (event.rawY - startRawY).toInt(),
+                p
+              )
+              p.width = p.width.coerceIn(dp(260), screenWidth)
+              p.height = p.height.coerceIn(dp(200), screenHeight)
+              p.x = p.x.coerceIn(0, (screenWidth - p.width).coerceAtLeast(0))
+              p.y = p.y.coerceIn(0, (screenHeight - p.height).coerceAtLeast(0))
+              try {
+                wm.updateViewLayout(r, p)
+              } catch (_: Exception) {
+              }
+              true
+            }
+
+            MotionEvent.ACTION_UP -> {
+              setBlurPaused(false)
+              saveGeometry()
+              v.performClick()
+              true
+            }
+
+            else -> false
+          }
+        }
+        root.addView(strip)
+      }
+
+      edgeGrip(
+        Gravity.START or Gravity.CENTER_VERTICAL,
+        edgeThickness,
+        ViewGroup.LayoutParams.MATCH_PARENT
+      ) { dx, _, p ->
+        p.x += dx
+        p.width -= dx
+      }
+      edgeGrip(
+        Gravity.END or Gravity.CENTER_VERTICAL,
+        edgeThickness,
+        ViewGroup.LayoutParams.MATCH_PARENT
+      ) { dx, _, p ->
+        p.width += dx
+      }
+      if (barOnTop) {
+        edgeGrip(
+          Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL,
+          ViewGroup.LayoutParams.MATCH_PARENT,
+          edgeThickness
+        ) { _, dy, p ->
+          p.height += dy
+        }
+      } else {
+        edgeGrip(
+          Gravity.TOP or Gravity.CENTER_HORIZONTAL,
+          ViewGroup.LayoutParams.MATCH_PARENT,
+          edgeThickness
+        ) { _, dy, p ->
+          p.y += dy
+          p.height -= dy
+        }
+      }
+      // Keep the corner grip reachable above the edge strips.
+      grip.bringToFront()
     }
 
     root.setOnKeyListener { _, keyCode, event ->
@@ -511,15 +650,200 @@ class OverlayService : Service() {
     webView = wv
     layoutParams = params
 
+    // The surround catcher must be added BEFORE the overlay window so
+    // it sits underneath it in z-order (v2.2.0).
+    addCatcher()
+    if (LinkPreferences.getAnimLevel(this) != LinkPreferences.ANIM_OFF) {
+      params.windowAnimations = R.style.OverlayWindowAnim
+    }
     windowManager?.addView(root, params)
     root.requestFocus()
     wv.loadUrl(initialUrl)
   }
 
   private fun saveGeometry() {
+    if (!LinkPreferences.isOverlayRemember(this)) return
     val p = layoutParams ?: return
     if (isMinimized) return
     LinkPreferences.saveOverlayGeometry(this, p.x, p.y, p.width, p.height)
+  }
+
+  // ----- v2.2.0: blur is paused while resizing (cheaper + clearer) -----
+
+  private fun setBlurPaused(paused: Boolean) {
+    if (Build.VERSION.SDK_INT < 31) return
+    val wm = windowManager ?: return
+    val root = rootView ?: return
+    val p = layoutParams ?: return
+    val blurFlag = WindowManager.LayoutParams.FLAG_BLUR_BEHIND
+    if (paused) {
+      blurWasOn = (p.flags and blurFlag) != 0
+      if (blurWasOn) {
+        p.flags = p.flags and blurFlag.inv()
+        p.dimAmount = 0f
+        try {
+          wm.updateViewLayout(root, p)
+        } catch (_: Exception) {
+        }
+      }
+    } else if (blurWasOn) {
+      p.flags = p.flags or blurFlag
+      p.dimAmount = 0.2f
+      try {
+        wm.updateViewLayout(root, p)
+      } catch (_: Exception) {
+      }
+      blurWasOn = false
+    }
+  }
+
+  // ----- v2.2.0: tapping the blurred surround enters passthrough -----
+
+  private fun addCatcher() {
+    if (catcherView != null) return
+    if (!LinkPreferences.isPassthroughTapEnabled(this)) return
+    val wm = windowManager ?: return
+    val catcher = View(this).apply {
+      setBackgroundColor(Color.TRANSPARENT)
+      setOnTouchListener { _, event ->
+        if (event.actionMasked == MotionEvent.ACTION_UP) {
+          enterPassthrough()
+        }
+        true
+      }
+    }
+    val cp = WindowManager.LayoutParams(
+      WindowManager.LayoutParams.MATCH_PARENT,
+      WindowManager.LayoutParams.MATCH_PARENT,
+      WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
+      WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
+      PixelFormat.TRANSLUCENT
+    )
+    try {
+      wm.addView(catcher, cp)
+      catcherView = catcher
+    } catch (_: Exception) {
+    }
+  }
+
+  private fun setCatcherTouchable(touchable: Boolean) {
+    val catcher = catcherView ?: return
+    val wm = windowManager ?: return
+    val cp = catcher.layoutParams as? WindowManager.LayoutParams ?: return
+    val flag = WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
+    val newFlags = if (touchable) {
+      cp.flags and flag.inv()
+    } else {
+      cp.flags or flag
+    }
+    if (newFlags == cp.flags) return
+    cp.flags = newFlags
+    try {
+      wm.updateViewLayout(catcher, cp)
+    } catch (_: Exception) {
+    }
+  }
+
+  private fun removeCatcher() {
+    catcherView?.let { catcher ->
+      try {
+        windowManager?.removeView(catcher)
+      } catch (_: Exception) {
+      }
+    }
+    catcherView = null
+  }
+
+  // ----- v2.2.0: find-in-page bar -----
+
+  @SuppressLint("ClickableViewAccessibility")
+  private fun showFindBar() {
+    if (findBarView != null) return
+    val wm = windowManager ?: return
+    val metrics = resources.displayMetrics
+    val barLayout = LinearLayout(this).apply {
+      orientation = LinearLayout.HORIZONTAL
+      gravity = Gravity.CENTER_VERTICAL
+      setPadding(dp(10), dp(4), dp(4), dp(4))
+      background = GradientDrawable().apply {
+        setColor(BAR_COLOR)
+        cornerRadius = dp(20).toFloat()
+      }
+    }
+    val input = android.widget.EditText(this).apply {
+      hint = getString(R.string.find_hint)
+      setTextColor(Color.WHITE)
+      setHintTextColor(0xFFBDC1C6.toInt())
+      textSize = 14f
+      isSingleLine = true
+      layoutParams = LinearLayout.LayoutParams(
+        0,
+        ViewGroup.LayoutParams.WRAP_CONTENT,
+        1f
+      )
+      addTextChangedListener(object : android.text.TextWatcher {
+        override fun beforeTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
+        override fun onTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
+        override fun afterTextChanged(s: android.text.Editable?) {
+          val query = s?.toString().orEmpty()
+          if (query.isEmpty()) {
+            webView?.clearMatches()
+          } else {
+            webView?.findAllAsync(query)
+          }
+        }
+      })
+    }
+    fun navButton(label: String, action: () -> Unit): TextView {
+      return TextView(this).apply {
+        text = label
+        setTextColor(Color.WHITE)
+        textSize = 17f
+        gravity = Gravity.CENTER
+        layoutParams = LinearLayout.LayoutParams(dp(40), dp(40))
+        setOnClickListener { action() }
+      }
+    }
+    barLayout.addView(input)
+    barLayout.addView(navButton("↑") { webView?.findNext(false) })
+    barLayout.addView(navButton("↓") { webView?.findNext(true) })
+    barLayout.addView(navButton("✕") { hideFindBar() })
+
+    val fp = WindowManager.LayoutParams(
+      metrics.widthPixels - dp(20),
+      WindowManager.LayoutParams.WRAP_CONTENT,
+      WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
+      WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL,
+      PixelFormat.TRANSLUCENT
+    ).apply {
+      gravity = Gravity.TOP or Gravity.START
+      x = dp(10)
+      y = statusBarHeight() + dp(6)
+    }
+    try {
+      wm.addView(barLayout, fp)
+      findBarView = barLayout
+      findBarParams = fp
+      input.requestFocus()
+      val imm = getSystemService(
+        android.view.inputmethod.InputMethodManager::class.java
+      )
+      imm?.showSoftInput(input, android.view.inputmethod.InputMethodManager.SHOW_IMPLICIT)
+    } catch (_: Exception) {
+    }
+  }
+
+  private fun hideFindBar() {
+    findBarView?.let { bar ->
+      try {
+        windowManager?.removeView(bar)
+      } catch (_: Exception) {
+      }
+    }
+    findBarView = null
+    findBarParams = null
+    webView?.clearMatches()
+    rootView?.requestFocus()
   }
 
   private fun buildBar(): LinearLayout {
@@ -538,8 +862,9 @@ class OverlayService : Service() {
       setOnClickListener { closeOverlay() }
     }
 
-    // v2.1.0: turn the overlay into a bubble, right next to ✕.
-    val toBubble = createBarButton("◎").apply {
+    // Turn the overlay into a bubble, right next to ✕. The glyph is a
+    // minimize-style dash since v2.2.0 (the ◎ was hard to read).
+    val toBubble = createBarButton("ー").apply {
       contentDescription = getString(R.string.overlay_to_bubble)
       setOnClickListener { convertToBubble() }
     }
@@ -771,6 +1096,7 @@ class OverlayService : Service() {
     val params = layoutParams ?: return
     if (isPassthrough) return
     isPassthrough = true
+    setCatcherTouchable(false)
     params.flags = params.flags or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
     try {
       wm.updateViewLayout(root, params)
@@ -864,6 +1190,7 @@ class OverlayService : Service() {
     handleParams = null
     if (!isPassthrough) return
     isPassthrough = false
+    setCatcherTouchable(true)
     val root = rootView ?: return
     val params = layoutParams ?: return
     params.flags = params.flags and WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE.inv()
@@ -912,6 +1239,9 @@ class OverlayService : Service() {
     menu.add(0, MENU_COPY, 9, getString(R.string.menu_copy_link))
     menu.add(0, MENU_SHARE, 10, getString(R.string.act_share))
     menu.add(0, MENU_SETTINGS, 11, getString(R.string.overlay_settings))
+    menu.add(0, MENU_FIND, 12, getString(R.string.overlay_find))
+    menu.add(0, MENU_READ_LATER, 13, getString(R.string.overlay_read_later))
+    menu.add(0, MENU_SCREENSHOT, 14, getString(R.string.overlay_screenshot))
 
     popup.setOnMenuItemClickListener { item: MenuItem ->
       when {
@@ -961,10 +1291,37 @@ class OverlayService : Service() {
         }
         item.itemId == MENU_DESKTOP -> {
           desktopMode = !desktopMode
+          LinkPreferences.setDesktopDefault(this@OverlayService, desktopMode)
           webView?.let { view ->
             view.settings.userAgentString = if (desktopMode) DESKTOP_UA else null
             view.settings.useWideViewPort = desktopMode
             view.reload()
+          }
+          true
+        }
+        item.itemId == MENU_FIND -> {
+          showFindBar()
+          true
+        }
+        item.itemId == MENU_READ_LATER -> {
+          arun.com.chromer.readlater.ReadLaterStore.add(
+            this@OverlayService,
+            currentUrl,
+            titleView?.text?.toString() ?: currentUrl
+          )
+          Toast.makeText(
+            this@OverlayService,
+            getString(R.string.read_later_added),
+            Toast.LENGTH_SHORT
+          ).show()
+          true
+        }
+        item.itemId == MENU_SCREENSHOT -> {
+          webView?.let { view ->
+            arun.com.chromer.browser.ScreenshotShare.captureAndShare(
+              this@OverlayService,
+              view
+            )
           }
           true
         }
@@ -1035,6 +1392,15 @@ class OverlayService : Service() {
   }
 
   private fun cleanup() {
+    removeCatcher()
+    findBarView?.let { bar ->
+      try {
+        windowManager?.removeView(bar)
+      } catch (_: Exception) {
+      }
+    }
+    findBarView = null
+    findBarParams = null
     handleView?.let { handle ->
       try {
         windowManager?.removeView(handle)
@@ -1102,6 +1468,9 @@ class OverlayService : Service() {
     private const val MENU_ASPECT_BASE = 200
     private const val MENU_ASPECT_FULL = 210
     private const val MENU_METHOD_BASE = 100
+    private const val MENU_FIND = 14
+    private const val MENU_READ_LATER = 15
+    private const val MENU_SCREENSHOT = 16
 
     fun canDrawOverlays(context: Context): Boolean = Settings.canDrawOverlays(context)
 

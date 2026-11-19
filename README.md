@@ -26,6 +26,16 @@ After installing, set Hiraku as your default browser so links from other apps ar
 - **URL security check (v2.1.0)**: warns before opening suspicious links (IP-address hosts, punycode domains, URLs with embedded user info). Can be turned off.
 - **And more**: article mode, tabs & history, desktop site toggle, a dedicated settings screen, and a Japanese / English UI (Settings → Language).
 
+## What's new in v2.2.0
+
+- **A redesigned chooser**: a narrower floating sheet with a drag bar (pull it down to shrink the sheet), real app icons for browser methods and simple glyphs for the rest, a secret-mode switch right in the sheet, the URL safety result shown in place (including an all-clear), and checkboxes to pin the choice for the source app *or* for the site.
+- **Per-site rules**: pin an open method per domain (per-app rules still win).
+- **A fuller browser**: find in page, text size (75–150%), forced dark for pages, a persistent desktop-mode default, read-later, and screenshot sharing.
+- **A PC-like overlay**: resize from any edge or corner, the background blur pauses while you size the window, and tapping the blurred surround switches to using the app underneath.
+- **Motion & design**: springy chooser entrance with staggered items, an animated bottom navigation pill with a liquid/gooey highlight on the home screen, interactive segmented controls in Settings, and a strength setting (off / weak / strong).
+- **A new icon**: a white tile with a dark-navy "h" and cursor, with an inverted dark variant and themed-icon support.
+- **Everyday extras**: open the clipboard's URL from the home screen, search history and delete it by period, and back up / restore all settings to a file.
+
 ## Permissions
 
 | Permission | Why |
@@ -77,6 +87,16 @@ The ad-blocking list is built from the public [pgl.yoyo.org adservers](https://p
 - **クイック共有（v2.1.0）**：共有先アプリを最大5個まで登録して、1タップでリンクを送れます
 - **URLセキュリティチェック（v2.1.0）**：IPアドレスへのリンク、国際化ドメイン（xn--）、ユーザー情報を含むURLなど、怪しいリンクを開く前に警告します（OFFにもできます）
 - **その他**：記事モード、タブと履歴、デスクトップサイト切替、細かい設定を集約した設定画面、日本語／英語の表示切替（設定 → 言語）
+
+## v2.2.0の新機能
+
+- **選択画面を刷新**：横幅を絞った浮動シートに、ドラッグバー（下に引くと小さく、上に引くと広く）、ブラウザ系は実アイコン・機能系はシンプルな図形アイコン、シート内シークレット切替、URLセキュリティ結果のその場表示（安全な場合も表示）、アプリ固定に加えてサイト固定のチェックボックス
+- **サイトごとの設定**：ドメインごとに開き方を固定できます（アプリごとの設定が優先）
+- **ブラウザの充実**：ページ内検索、文字サイズ（75〜150%）、ページの強制ダーク、デスクトップモードの既定化、あとで読む、スクリーンショット共有
+- **PCライクな重ねて表示**：端や角から自由にリサイズ、リサイズ中は周りのぼかしを一時オフ、周りのぼかし部分をタップすると下のアプリを操作するモードへ
+- **動きとデザイン**：バネ感のある選択画面（項目が順に出現）、ホーム画面のアニメーションする下部ナビゲーションピル（液体・グーイーなハイライト）、設定画面のセグメントコントロール、アニメーションの強さ設定（オフ／弱い／強い）
+- **新しいアイコン**：白いタイルにダークネイビーの「h」とカーソル。反転したダーク版とテーマアイコンにも対応
+- **日常の便利**：ホーム画面からクリップボードのURLを開く、履歴の検索と期間削除、設定のバックアップ／復元（ファイル）
 
 ## 権限について
 

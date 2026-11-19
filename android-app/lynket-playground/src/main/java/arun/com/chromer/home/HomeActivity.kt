@@ -20,28 +20,42 @@
 
 package arun.com.chromer.home
 
+import android.content.ClipboardManager
+import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.Canvas
+import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
@@ -65,12 +79,17 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.asComposeRenderEffect
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.text.input.ImeAction
@@ -87,6 +106,8 @@ import arun.com.chromer.customtab.OpenMethod
 import arun.com.chromer.di.HasInjector
 import arun.com.chromer.history.HistoryActivity
 import arun.com.chromer.link.LinkHandlerActivity
+import arun.com.chromer.readlater.ReadLaterActivity
+import arun.com.chromer.readlater.ReadLaterStore
 import arun.com.chromer.settings.SettingsActivity
 import arun.com.chromer.setup.SetupActivity
 import arun.com.chromer.setup.SetupPreferences
@@ -98,6 +119,7 @@ import java.net.URL
 import java.net.URLEncoder
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 
@@ -160,22 +182,63 @@ private fun HomeContent(
   ) {
     isDefault = DefaultBrowser.isDefaultBrowser(context)
   }
+  var clipboardUrl by remember { mutableStateOf<String?>(null) }
+  var readLaterCount by remember {
+    mutableStateOf(ReadLaterStore.count(context))
+  }
+  var resumeCount by remember { mutableStateOf(0) }
+
+  fun refreshClipboard() {
+    clipboardUrl = try {
+      val manager =
+        context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+      val text = manager.primaryClip
+        ?.getItemAt(0)
+        ?.coerceToText(context)
+        ?.toString()
+        ?.trim()
+      text?.takeIf {
+        it.length < 400 &&
+          (it.startsWith("http://") || it.startsWith("https://") ||
+            (!it.contains(" ") && it.contains(".")))
+      }
+    } catch (_: Exception) {
+      null
+    }
+  }
+
   val lifecycleOwner = LocalLifecycleOwner.current
   DisposableEffect(lifecycleOwner) {
     val observer = LifecycleEventObserver { _, event ->
       if (event == Lifecycle.Event.ON_RESUME) {
         isDefault = DefaultBrowser.isDefaultBrowser(context)
         defaultMethod = LinkPreferences.getDefaultMethod(context)
+        readLaterCount = ReadLaterStore.count(context)
+        resumeCount++
+        refreshClipboard()
       }
     }
     lifecycleOwner.lifecycle.addObserver(observer)
     onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
   }
+  LaunchedEffect(Unit) { refreshClipboard() }
 
   Scaffold(
     topBar = {
       TopAppBar(
         title = { Text(text = "Hiraku") }
+      )
+    },
+    bottomBar = {
+      BottomNavPill(
+        resetKey = resumeCount,
+        onNavigate = { index ->
+          when (index) {
+            1 -> context.startActivity(Intent(context, TabsActivity::class.java))
+            2 -> context.startActivity(Intent(context, HistoryActivity::class.java))
+            3 -> context.startActivity(Intent(context, SettingsActivity::class.java))
+          }
+        }
       )
     }
   ) { innerPadding ->
@@ -246,6 +309,29 @@ private fun HomeContent(
                   )
                 }
               }
+            }
+          }
+        }
+      }
+
+      clipboardUrl?.let { clip ->
+        Card(modifier = Modifier.fillMaxWidth()) {
+          Column(modifier = Modifier.padding(16.dp)) {
+            Text(
+              text = stringResource(R.string.clipboard_url_title),
+              style = MaterialTheme.typography.titleMedium
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(
+              text = clip,
+              style = MaterialTheme.typography.bodySmall,
+              color = MaterialTheme.colorScheme.onSurfaceVariant,
+              maxLines = 2,
+              overflow = TextOverflow.Ellipsis
+            )
+            Spacer(modifier = Modifier.height(12.dp))
+            Button(onClick = { onOpenUrl(clip) }) {
+              Text(stringResource(R.string.clipboard_open))
             }
           }
         }
@@ -432,6 +518,14 @@ private fun HomeContent(
               modifier = Modifier.weight(1f)
             ) { Text(stringResource(R.string.history_title)) }
           }
+          OutlinedButton(
+            onClick = {
+              context.startActivity(Intent(context, ReadLaterActivity::class.java))
+            },
+            modifier = Modifier.fillMaxWidth()
+          ) {
+            Text(stringResource(R.string.read_later_title) + "（$readLaterCount）")
+          }
         }
       }
 
@@ -505,6 +599,153 @@ private fun LinkOptionRow(
       Spacer(modifier = Modifier.width(8.dp))
     }
     Text(text = label)
+  }
+}
+
+/**
+ * Animated bottom navigation pill (v2.2.0). The highlight stretches
+ * like liquid between items: one edge springs fast, the other lags,
+ * and a satellite blob rides along. On Android 12+ the shapes are
+ * merged with a blur + alpha-contrast (gooey) render effect.
+ */
+@Composable
+private fun BottomNavPill(resetKey: Int, onNavigate: (Int) -> Unit) {
+  val context = LocalContext.current
+  val animLevel = remember { LinkPreferences.getAnimLevel(context) }
+  var selected by remember { mutableIntStateOf(0) }
+  LaunchedEffect(resetKey) {
+    if (resetKey > 0) {
+      selected = 0
+    }
+  }
+  val labels = listOf(
+    stringResource(R.string.nav_home),
+    stringResource(R.string.nav_tabs),
+    stringResource(R.string.nav_history),
+    stringResource(R.string.nav_settings)
+  )
+  val scope = rememberCoroutineScope()
+  Surface(tonalElevation = 3.dp) {
+    BoxWithConstraints(
+      modifier = Modifier
+        .fillMaxWidth()
+        .padding(horizontal = 20.dp, vertical = 12.dp)
+        .height(60.dp)
+        .clip(RoundedCornerShape(50))
+        .background(MaterialTheme.colorScheme.surfaceVariant)
+    ) {
+      val itemWidth = maxWidth / labels.size
+      val fastSpec = when (animLevel) {
+        LinkPreferences.ANIM_OFF -> tween<androidx.compose.ui.unit.Dp>(durationMillis = 1)
+        LinkPreferences.ANIM_WEAK -> tween(durationMillis = 160)
+        else -> spring(
+          dampingRatio = Spring.DampingRatioMediumBouncy,
+          stiffness = Spring.StiffnessMediumLow
+        )
+      }
+      val slowSpec = when (animLevel) {
+        LinkPreferences.ANIM_OFF -> tween<androidx.compose.ui.unit.Dp>(durationMillis = 1)
+        LinkPreferences.ANIM_WEAK -> tween(durationMillis = 260)
+        else -> spring(
+          dampingRatio = Spring.DampingRatioLowBouncy,
+          stiffness = Spring.StiffnessLow
+        )
+      }
+      val fastX by animateDpAsState(
+        targetValue = itemWidth * selected,
+        animationSpec = fastSpec,
+        label = "navFast"
+      )
+      val slowX by animateDpAsState(
+        targetValue = itemWidth * selected,
+        animationSpec = slowSpec,
+        label = "navSlow"
+      )
+      val left = if (fastX < slowX) fastX else slowX
+      val span = if (fastX > slowX) fastX - slowX else slowX - fastX
+      val pillColor = MaterialTheme.colorScheme.primary
+      Box(
+        modifier = Modifier
+          .fillMaxSize()
+          .then(gooeyLayerModifier(animLevel == LinkPreferences.ANIM_STRONG))
+      ) {
+        Box(
+          modifier = Modifier
+            .offset(x = left + 4.dp, y = 4.dp)
+            .width(span + itemWidth - 8.dp)
+            .height(52.dp)
+            .background(pillColor, RoundedCornerShape(50))
+        )
+        Box(
+          modifier = Modifier
+            .offset(x = slowX + itemWidth / 2 - 15.dp, y = 15.dp)
+            .size(30.dp)
+            .background(pillColor, CircleShape)
+        )
+      }
+      Row(modifier = Modifier.fillMaxSize()) {
+        labels.forEachIndexed { index, label ->
+          Box(
+            modifier = Modifier
+              .width(itemWidth)
+              .fillMaxHeight()
+              .clickable {
+                if (index != selected) {
+                  selected = index
+                  if (index != 0) {
+                    scope.launch {
+                      delay(150)
+                      onNavigate(index)
+                    }
+                  }
+                }
+              },
+            contentAlignment = Alignment.Center
+          ) {
+            Text(
+              text = label,
+              style = MaterialTheme.typography.labelLarge,
+              color = if (index == selected) {
+                MaterialTheme.colorScheme.onPrimary
+              } else {
+                MaterialTheme.colorScheme.onSurfaceVariant
+              }
+            )
+          }
+        }
+      }
+    }
+  }
+}
+
+/** Blur + alpha contrast, the classic gooey merge (API 31+). */
+private fun gooeyLayerModifier(enabled: Boolean): Modifier {
+  if (!enabled || Build.VERSION.SDK_INT < 31) return Modifier
+  val effect = try {
+    val blur = android.graphics.RenderEffect.createBlurEffect(
+      10f,
+      10f,
+      android.graphics.Shader.TileMode.CLAMP
+    )
+    val matrix = android.graphics.ColorMatrix(
+      floatArrayOf(
+        1f, 0f, 0f, 0f, 0f,
+        0f, 1f, 0f, 0f, 0f,
+        0f, 0f, 1f, 0f, 0f,
+        0f, 0f, 0f, 30f, -3600f
+      )
+    )
+    val contrast = android.graphics.RenderEffect.createColorFilterEffect(
+      android.graphics.ColorMatrixColorFilter(matrix)
+    )
+    android.graphics.RenderEffect.createChainEffect(contrast, blur)
+  } catch (_: Exception) {
+    null
+  }
+  return if (effect == null) {
+    Modifier
+  } else {
+    Modifier.graphicsLayer { renderEffect = effect.asComposeRenderEffect() }
   }
 }
 

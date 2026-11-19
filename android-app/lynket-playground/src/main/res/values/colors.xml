@@ -27,4 +27,9 @@
     <color name="teal_700">#FF018786</color>
     <color name="black">#FF000000</color>
     <color name="white">#FFFFFFFF</color>
+
+    <!-- Launcher icon (v2.2.0 design): white tile, dark navy glyph.
+         values-night flips the pair for dark mode. -->
+    <color name="ic_launcher_bg">#FFFFFFFF</color>
+    <color name="ic_launcher_fg">#FF0F2540</color>
 </resources>

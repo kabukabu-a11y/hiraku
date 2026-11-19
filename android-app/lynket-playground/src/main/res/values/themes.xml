@@ -21,4 +21,10 @@
 <resources>
 
   <style name="Theme.Lynket" parent="android:Theme.Material.Light.NoActionBar" />
+
+  <!-- Window animations for the overlay browser window (v2.2.0). -->
+  <style name="OverlayWindowAnim">
+    <item name="android:windowEnterAnimation">@anim/overlay_enter</item>
+    <item name="android:windowExitAnimation">@anim/overlay_exit</item>
+  </style>
 </resources>

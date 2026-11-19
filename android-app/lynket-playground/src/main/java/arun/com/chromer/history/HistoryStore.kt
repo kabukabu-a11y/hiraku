@@ -103,6 +103,13 @@ object HistoryStore {
     save(context, entries)
   }
 
+  /** Deletes every entry visited at or after [cutoffMillis] (v2.2.0). */
+  fun deleteVisitedAfter(context: Context, cutoffMillis: Long) {
+    val entries = load(context)
+    entries.removeAll { it.visitedAt >= cutoffMillis }
+    save(context, entries)
+  }
+
   fun clear(context: Context) {
     prefs(context).edit().remove(KEY_ENTRIES).apply()
   }

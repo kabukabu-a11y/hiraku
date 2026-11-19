@@ -7,6 +7,7 @@
     <string name="act_delete">Delete</string>
     <string name="act_share">Share</string>
     <string name="act_forward">Forward</string>
+    <string name="act_add">Add</string>
 
     <!-- Open methods -->
     <string name="method_custom_tab_primary">Chosen browser (Custom Tab)</string>
@@ -164,4 +165,68 @@
     <string name="passthrough_handle">Back to browser</string>
     <string name="overlay_aspect">Aspect ratio</string>
     <string name="aspect_full">Full size</string>
+
+    <!-- v2.2.0 -->
+    <string name="find_in_page">Find in page</string>
+    <string name="find_hint">Search this page</string>
+    <string name="find_no_matches">No matches</string>
+    <string name="find_count">%1$d / %2$d</string>
+    <string name="find_next">Next</string>
+    <string name="find_prev">Previous</string>
+    <string name="text_size">Text size</string>
+    <string name="force_dark">Darken pages</string>
+    <string name="force_dark_desc">Show pages with dark colors where the device supports it</string>
+    <string name="screenshot_share">Share screenshot</string>
+    <string name="read_later_add">Add to read later</string>
+    <string name="read_later_added">Added to read later</string>
+    <string name="read_later_title">Read later</string>
+    <string name="read_later_empty">No saved pages yet</string>
+    <string name="read_later_clear_all">Remove all</string>
+    <string name="clipboard_url_title">URL in clipboard</string>
+    <string name="clipboard_open">Open</string>
+    <string name="history_search_hint">Search history</string>
+    <string name="history_no_results">No matching history</string>
+    <string name="history_delete_period">Delete by period</string>
+    <string name="history_delete_hour">Last hour</string>
+    <string name="history_delete_today">Today</string>
+    <string name="history_delete_week">Last 7 days</string>
+    <string name="history_delete_all">Everything</string>
+    <string name="site_rules_title">Per-site settings</string>
+    <string name="site_rules_desc">Choose how links open for each domain. Per-app settings take priority</string>
+    <string name="site_rules_add">Add a site</string>
+    <string name="site_rules_domain_hint">Domain (e.g. example.com)</string>
+    <string name="site_rules_empty">No per-site settings yet</string>
+    <string name="site_rules_default_option">Back to standard (remove)</string>
+    <string name="chooser_fix_for_site">Always use this for this site</string>
+    <string name="chooser_secret">Open this link in secret mode</string>
+    <string name="safety_ok">Security check: nothing suspicious found</string>
+    <string name="safety_warn_short">Security check: points to review</string>
+    <string name="settings_animation">Animations</string>
+    <string name="settings_animation_desc">How strong the motion of sheets and screens is</string>
+    <string name="anim_off">Off</string>
+    <string name="anim_weak">Weak</string>
+    <string name="anim_strong">Strong</string>
+    <string name="settings_desktop_default">Desktop mode by default</string>
+    <string name="settings_desktop_default_desc">Open the browser and overlay in desktop site mode from the start</string>
+    <string name="settings_text_size_desc">How large page text is</string>
+    <string name="settings_overlay">Overlay</string>
+    <string name="settings_free_resize">Free resize from edges</string>
+    <string name="settings_free_resize_desc">Drag any edge or corner to resize the window like on a PC</string>
+    <string name="settings_overlay_remember">Remember position and size</string>
+    <string name="settings_overlay_remember_desc">Open the overlay at the same position and size next time</string>
+    <string name="settings_passthrough_tap">Tap the surround to use the app underneath</string>
+    <string name="settings_passthrough_tap_desc">Tapping the blurred area around the overlay lets you use the app underneath</string>
+    <string name="settings_backup">Backup and restore</string>
+    <string name="settings_backup_desc">Save your open methods, rules and display settings to a file, or load them back</string>
+    <string name="settings_export">Export settings</string>
+    <string name="settings_import">Import settings</string>
+    <string name="settings_imported">Settings imported</string>
+    <string name="settings_import_failed">Could not read that settings file</string>
+    <string name="nav_home">Home</string>
+    <string name="nav_tabs">Tabs</string>
+    <string name="nav_history">History</string>
+    <string name="nav_settings">Settings</string>
+    <string name="overlay_find">Find in page</string>
+    <string name="overlay_read_later">Read later</string>
+    <string name="overlay_screenshot">Screenshot</string>
 </resources>

@@ -89,6 +89,17 @@
       android:exported="false" />
     <activity android:name=".tabs.TabsActivity" android:exported="false" />
     <activity android:name=".history.HistoryActivity" android:exported="false" />
+    <activity android:name=".readlater.ReadLaterActivity" android:exported="false" />
+    <activity android:name=".apps.SiteRulesActivity" android:exported="false" />
+    <provider
+      android:name="androidx.core.content.FileProvider"
+      android:authorities="${applicationId}.fileprovider"
+      android:exported="false"
+      android:grantUriPermissions="true">
+      <meta-data
+        android:name="android.support.FILE_PROVIDER_PATHS"
+        android:resource="@xml/file_paths" />
+    </provider>
     <activity android:name=".setup.SetupActivity" android:exported="false" />
     <activity android:name=".article.ArticleActivity" android:exported="false" />
     <activity android:name=".settings.SettingsActivity" android:exported="false" />

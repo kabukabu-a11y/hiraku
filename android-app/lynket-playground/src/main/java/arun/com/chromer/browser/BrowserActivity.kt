@@ -27,6 +27,7 @@ import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.view.ViewGroup
 import android.webkit.WebChromeClient
@@ -73,6 +74,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -103,8 +105,10 @@ import arun.com.chromer.customtab.OpenMethod
 import arun.com.chromer.customtab.displayLabel
 import arun.com.chromer.history.HistoryStore
 import arun.com.chromer.overlay.OverlayService
+import arun.com.chromer.readlater.ReadLaterStore
 import arun.com.chromer.tabs.TabStore
 import arun.com.chromer.theme.LynketTheme
+import arun.com.chromer.ui.SegmentedControl
 
 /**
  * The full-screen in-app browser. Link routing lives in
@@ -174,7 +178,13 @@ class BrowserActivity : ComponentActivity() {
     var canGoForward by remember { mutableStateOf(false) }
     var menuExpanded by remember { mutableStateOf(false) }
     var barVisible by remember { mutableStateOf(true) }
-    var desktopMode by remember { mutableStateOf(false) }
+    var desktopMode by remember { mutableStateOf(LinkPreferences.isDesktopDefault(context)) }
+    var forceDark by remember { mutableStateOf(LinkPreferences.isForceDark(context)) }
+    var textZoom by remember { mutableIntStateOf(LinkPreferences.getTextZoom(context)) }
+    var textSizeDialog by remember { mutableStateOf(false) }
+    var findVisible by remember { mutableStateOf(false) }
+    var findQuery by remember { mutableStateOf("") }
+    var findInfo by remember { mutableStateOf("") }
     var adBlockEnabled by remember { mutableStateOf(LinkPreferences.isAdBlockEnabled(context)) }
     var blockedCount by remember { mutableIntStateOf(0) }
     var chooserVisible by remember { mutableStateOf(false) }
@@ -295,11 +305,58 @@ class BrowserActivity : ComponentActivity() {
                 menuExpanded = false
                 val newDesktopMode = !desktopMode
                 desktopMode = newDesktopMode
+                LinkPreferences.setDesktopDefault(context, newDesktopMode)
                 webView?.let { view ->
                   view.settings.userAgentString = if (newDesktopMode) desktopUserAgent else null
                   view.settings.useWideViewPort = newDesktopMode
                   view.reload()
                 }
+              }
+            )
+            DropdownMenuItem(
+              text = { Text(stringResource(R.string.find_in_page)) },
+              onClick = {
+                menuExpanded = false
+                findVisible = true
+              }
+            )
+            DropdownMenuItem(
+              text = { Text(stringResource(R.string.text_size)) },
+              onClick = {
+                menuExpanded = false
+                textSizeDialog = true
+              }
+            )
+            DropdownMenuItem(
+              text = { Text((if (forceDark) "✓ " else "") + stringResource(R.string.force_dark)) },
+              onClick = {
+                menuExpanded = false
+                val newValue = !forceDark
+                forceDark = newValue
+                LinkPreferences.setForceDark(context, newValue)
+                if (Build.VERSION.SDK_INT >= 33) {
+                  webView?.settings?.isAlgorithmicDarkeningAllowed = newValue
+                }
+                webView?.reload()
+              }
+            )
+            DropdownMenuItem(
+              text = { Text(stringResource(R.string.read_later_add)) },
+              onClick = {
+                menuExpanded = false
+                ReadLaterStore.add(context, currentUrl, pageTitle ?: currentUrl)
+                Toast.makeText(
+                  context,
+                  context.getString(R.string.read_later_added),
+                  Toast.LENGTH_SHORT
+                ).show()
+              }
+            )
+            DropdownMenuItem(
+              text = { Text(stringResource(R.string.screenshot_share)) },
+              onClick = {
+                menuExpanded = false
+                webView?.let { view -> ScreenshotShare.captureAndShare(context, view) }
               }
             )
             DropdownMenuItem(
@@ -413,6 +470,31 @@ class BrowserActivity : ComponentActivity() {
       )
     }
 
+    if (textSizeDialog) {
+      val zoomOptions = listOf(75, 100, 125, 150)
+      AlertDialog(
+        onDismissRequest = { textSizeDialog = false },
+        title = { Text(stringResource(R.string.text_size)) },
+        text = {
+          SegmentedControl(
+            options = zoomOptions.map { "$it%" },
+            selectedIndex = zoomOptions.indexOf(textZoom).coerceAtLeast(0),
+            onSelect = { index ->
+              val newZoom = zoomOptions[index]
+              textZoom = newZoom
+              LinkPreferences.setTextZoom(context, newZoom)
+              webView?.settings?.textZoom = newZoom
+            }
+          )
+        },
+        confirmButton = {
+          TextButton(onClick = { textSizeDialog = false }) {
+            Text(stringResource(R.string.act_close))
+          }
+        }
+      )
+    }
+
     Scaffold(
       topBar = {
         if (barOnTop) {
@@ -460,6 +542,57 @@ class BrowserActivity : ComponentActivity() {
             modifier = Modifier.fillMaxWidth()
           )
         }
+        if (findVisible) {
+          Row(
+            modifier = Modifier
+              .fillMaxWidth()
+              .padding(horizontal = 8.dp, vertical = 4.dp),
+            verticalAlignment = Alignment.CenterVertically
+          ) {
+            OutlinedTextField(
+              value = findQuery,
+              onValueChange = { newQuery ->
+                findQuery = newQuery
+                findInfo = ""
+                if (newQuery.isEmpty()) {
+                  webView?.clearMatches()
+                } else {
+                  webView?.findAllAsync(newQuery)
+                }
+              },
+              label = { Text(stringResource(R.string.find_hint)) },
+              singleLine = true,
+              modifier = Modifier.weight(1f)
+            )
+            if (findInfo.isNotEmpty()) {
+              Spacer(modifier = Modifier.width(8.dp))
+              Text(
+                text = findInfo,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+              )
+            }
+            IconButton(onClick = { webView?.findNext(false) }) {
+              Text("↑")
+            }
+            IconButton(onClick = { webView?.findNext(true) }) {
+              Text("↓")
+            }
+            IconButton(
+              onClick = {
+                webView?.clearMatches()
+                findVisible = false
+                findQuery = ""
+                findInfo = ""
+              }
+            ) {
+              Icon(
+                imageVector = Icons.Filled.Close,
+                contentDescription = stringResource(R.string.act_close)
+              )
+            }
+          }
+        }
         AndroidView(
           factory = { factoryContext ->
             WebView(factoryContext).apply {
@@ -470,6 +603,29 @@ class BrowserActivity : ComponentActivity() {
               settings.javaScriptEnabled = true
               settings.domStorageEnabled = true
               settings.loadsImagesAutomatically = true
+              settings.textZoom = LinkPreferences.getTextZoom(factoryContext)
+              if (Build.VERSION.SDK_INT >= 33) {
+                settings.isAlgorithmicDarkeningAllowed =
+                  LinkPreferences.isForceDark(factoryContext)
+              }
+              if (LinkPreferences.isDesktopDefault(factoryContext)) {
+                settings.userAgentString =
+                  "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
+                settings.useWideViewPort = true
+              }
+              setFindListener { activeMatchOrdinal, numberOfMatches, isDoneCounting ->
+                if (isDoneCounting) {
+                  findInfo = if (numberOfMatches == 0) {
+                    context.getString(R.string.find_no_matches)
+                  } else {
+                    context.getString(
+                      R.string.find_count,
+                      activeMatchOrdinal + 1,
+                      numberOfMatches
+                    )
+                  }
+                }
+              }
               AdBlocker.ensureLoaded(factoryContext)
               webViewClient = object : WebViewClient() {
                 override fun shouldInterceptRequest(

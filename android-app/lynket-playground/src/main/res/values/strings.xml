@@ -27,6 +27,7 @@
     <string name="act_delete">削除</string>
     <string name="act_share">共有</string>
     <string name="act_forward">進む</string>
+    <string name="act_add">追加</string>
 
     <!-- Open methods -->
     <string name="method_custom_tab_primary">選んだブラウザ（Custom Tab）</string>
@@ -184,4 +185,68 @@
     <string name="passthrough_handle">ブラウザに戻る</string>
     <string name="overlay_aspect">比率</string>
     <string name="aspect_full">画面いっぱい</string>
+
+    <!-- v2.2.0 -->
+    <string name="find_in_page">ページ内検索</string>
+    <string name="find_hint">ページ内を検索</string>
+    <string name="find_no_matches">見つかりません</string>
+    <string name="find_count">%1$d / %2$d</string>
+    <string name="find_next">次へ</string>
+    <string name="find_prev">前へ</string>
+    <string name="text_size">文字サイズ</string>
+    <string name="force_dark">ページをダーク表示</string>
+    <string name="force_dark_desc">サイトの配色を暗くして表示します（対応端末のみ）</string>
+    <string name="screenshot_share">スクリーンショットを共有</string>
+    <string name="read_later_add">あとで読むに追加</string>
+    <string name="read_later_added">あとで読むに追加しました</string>
+    <string name="read_later_title">あとで読む</string>
+    <string name="read_later_empty">あとで読むページはまだありません</string>
+    <string name="read_later_clear_all">すべて削除</string>
+    <string name="clipboard_url_title">クリップボードのURL</string>
+    <string name="clipboard_open">開く</string>
+    <string name="history_search_hint">履歴を検索</string>
+    <string name="history_no_results">一致する履歴がありません</string>
+    <string name="history_delete_period">期間で削除</string>
+    <string name="history_delete_hour">過去1時間</string>
+    <string name="history_delete_today">今日</string>
+    <string name="history_delete_week">過去7日間</string>
+    <string name="history_delete_all">すべて</string>
+    <string name="site_rules_title">サイトごとの設定</string>
+    <string name="site_rules_desc">ドメインごとに開き方を決められます。アプリごとの設定が優先されます</string>
+    <string name="site_rules_add">サイトを追加</string>
+    <string name="site_rules_domain_hint">ドメイン（例：example.com）</string>
+    <string name="site_rules_empty">サイトごとの設定はまだありません</string>
+    <string name="site_rules_default_option">標準に戻す（削除）</string>
+    <string name="chooser_fix_for_site">このサイトではいつもこれで開く</string>
+    <string name="chooser_secret">このリンクをシークレットで開く</string>
+    <string name="safety_ok">セキュリティチェック：問題は見つかりませんでした</string>
+    <string name="safety_warn_short">セキュリティチェック：注意点があります</string>
+    <string name="settings_animation">アニメーション</string>
+    <string name="settings_animation_desc">画面やシートの動きの強さです</string>
+    <string name="anim_off">オフ</string>
+    <string name="anim_weak">弱い</string>
+    <string name="anim_strong">強い</string>
+    <string name="settings_desktop_default">デスクトップモードを既定にする</string>
+    <string name="settings_desktop_default_desc">ブラウザと重ねて表示を、最初からPC版サイト表示で開きます</string>
+    <string name="settings_text_size_desc">ページの文字の大きさです</string>
+    <string name="settings_overlay">重ねて表示</string>
+    <string name="settings_free_resize">端から自由にリサイズ</string>
+    <string name="settings_free_resize_desc">窓の端や角をドラッグして、PCの窓のように大きさを変えられます</string>
+    <string name="settings_overlay_remember">位置とサイズを覚える</string>
+    <string name="settings_overlay_remember_desc">次回も同じ位置・サイズで重ねて表示します</string>
+    <string name="settings_passthrough_tap">周りをタップで下のアプリを操作</string>
+    <string name="settings_passthrough_tap_desc">重ねて表示の周りのぼかし部分をタップすると、下のアプリを操作できるようになります</string>
+    <string name="settings_backup">バックアップと復元</string>
+    <string name="settings_backup_desc">開き方・ルール・表示などの設定をファイルに保存したり、読み込んだりできます</string>
+    <string name="settings_export">設定を書き出す</string>
+    <string name="settings_import">設定を読み込む</string>
+    <string name="settings_imported">設定を読み込みました</string>
+    <string name="settings_import_failed">設定ファイルを読み込めませんでした</string>
+    <string name="nav_home">ホーム</string>
+    <string name="nav_tabs">タブ</string>
+    <string name="nav_history">履歴</string>
+    <string name="nav_settings">設定</string>
+    <string name="overlay_find">ページ内検索</string>
+    <string name="overlay_read_later">あとで読む</string>
+    <string name="overlay_screenshot">スクリーンショット</string>
 </resources>

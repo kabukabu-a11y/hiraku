@@ -35,13 +35,16 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.res.stringResource
@@ -77,7 +80,24 @@ class HistoryActivity : ComponentActivity() {
 private fun HistoryScreen(onBack: () -> Unit) {
   val context = LocalContext.current
   var entries by remember { mutableStateOf(HistoryStore.getAll(context)) }
+  var query by remember { mutableStateOf("") }
+  var periodMenu by remember { mutableStateOf(false) }
   val dateFormat = remember { SimpleDateFormat("yyyy/MM/dd HH:mm", Locale.JAPAN) }
+  val filtered = remember(entries, query) {
+    val q = query.trim()
+    if (q.isEmpty()) {
+      entries
+    } else {
+      entries.filter {
+        it.title.contains(q, ignoreCase = true) ||
+          it.url.contains(q, ignoreCase = true)
+      }
+    }
+  }
+
+  fun refresh() {
+    entries = HistoryStore.getAll(context)
+  }
 
   Scaffold(
     topBar = {
@@ -89,49 +109,115 @@ private fun HistoryScreen(onBack: () -> Unit) {
           }
         },
         actions = {
-          TextButton(
-            onClick = {
-              HistoryStore.clear(context)
-              entries = emptyList()
-            },
-            enabled = entries.isNotEmpty()
-          ) {
-            Text(stringResource(R.string.history_clear_all))
+          Box {
+            IconButton(
+              onClick = { periodMenu = true },
+              enabled = entries.isNotEmpty()
+            ) {
+              Icon(
+                Icons.Filled.MoreVert,
+                contentDescription = stringResource(R.string.history_delete_period)
+              )
+            }
+            DropdownMenu(
+              expanded = periodMenu,
+              onDismissRequest = { periodMenu = false }
+            ) {
+              DropdownMenuItem(
+                text = { Text(stringResource(R.string.history_delete_hour)) },
+                onClick = {
+                  periodMenu = false
+                  HistoryStore.deleteVisitedAfter(
+                    context,
+                    System.currentTimeMillis() - 60 * 60 * 1000L
+                  )
+                  refresh()
+                }
+              )
+              DropdownMenuItem(
+                text = { Text(stringResource(R.string.history_delete_today)) },
+                onClick = {
+                  periodMenu = false
+                  val cal = java.util.Calendar.getInstance().apply {
+                    set(java.util.Calendar.HOUR_OF_DAY, 0)
+                    set(java.util.Calendar.MINUTE, 0)
+                    set(java.util.Calendar.SECOND, 0)
+                    set(java.util.Calendar.MILLISECOND, 0)
+                  }
+                  HistoryStore.deleteVisitedAfter(context, cal.timeInMillis)
+                  refresh()
+                }
+              )
+              DropdownMenuItem(
+                text = { Text(stringResource(R.string.history_delete_week)) },
+                onClick = {
+                  periodMenu = false
+                  HistoryStore.deleteVisitedAfter(
+                    context,
+                    System.currentTimeMillis() - 7 * 24 * 60 * 60 * 1000L
+                  )
+                  refresh()
+                }
+              )
+              DropdownMenuItem(
+                text = { Text(stringResource(R.string.history_delete_all)) },
+                onClick = {
+                  periodMenu = false
+                  HistoryStore.clear(context)
+                  refresh()
+                }
+              )
+            }
           }
         }
       )
     }
   ) { padding ->
-    if (entries.isEmpty()) {
-      Box(
+    Column(
+      modifier = Modifier
+        .fillMaxSize()
+        .padding(padding)
+    ) {
+      OutlinedTextField(
+        value = query,
+        onValueChange = { query = it },
+        label = { Text(stringResource(R.string.history_search_hint)) },
+        singleLine = true,
         modifier = Modifier
-          .fillMaxSize()
-          .padding(padding),
-        contentAlignment = Alignment.Center
-      ) {
-        Text(
-          text = stringResource(R.string.history_empty),
-          color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-      }
-    } else {
-      LazyColumn(
-        modifier = Modifier
-          .fillMaxSize()
-          .padding(padding)
-      ) {
-        items(entries, key = { it.url + "@" + it.visitedAt }) { entry ->
-          HistoryRow(
-            entry = entry,
-            dateFormat = dateFormat,
-            onOpen = {
-              context.startActivity(BrowserActivity.createDirectIntent(context, entry.url))
-            },
-            onDelete = {
-              HistoryStore.remove(context, entry)
-              entries = HistoryStore.getAll(context)
-            }
+          .fillMaxWidth()
+          .padding(horizontal = 16.dp, vertical = 8.dp)
+      )
+      if (filtered.isEmpty()) {
+        Box(
+          modifier = Modifier.fillMaxSize(),
+          contentAlignment = Alignment.Center
+        ) {
+          Text(
+            text = stringResource(
+              if (entries.isEmpty()) {
+                R.string.history_empty
+              } else {
+                R.string.history_no_results
+              }
+            ),
+            color = MaterialTheme.colorScheme.onSurfaceVariant
           )
+        }
+      } else {
+        LazyColumn(modifier = Modifier.fillMaxSize()) {
+          items(filtered, key = { it.url + "@" + it.visitedAt }) { entry ->
+            HistoryRow(
+              entry = entry,
+              dateFormat = dateFormat,
+              onOpen = {
+                context.startActivity(BrowserActivity.createDirectIntent(context, entry.url))
+              },
+              onDelete = {
+                HistoryStore.remove(context, entry)
+                refresh()
+              }
+            )
+          }
         }
       }
     }
