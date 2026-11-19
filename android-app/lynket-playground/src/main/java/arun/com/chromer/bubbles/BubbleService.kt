@@ -56,11 +56,15 @@ class BubbleService : Service() {
   private class BubbleItem(
     val url: String,
     val view: View,
-    val params: WindowManager.LayoutParams
+    val params: WindowManager.LayoutParams,
+    val secret: Boolean = false
   )
 
   private lateinit var windowManager: WindowManager
   private val bubbles = mutableListOf<BubbleItem>()
+  // Top edge of the bubble stack; restored from the remembered
+  // position when the memory setting is on (v2.1.0).
+  private var stackBaseY: Int = -1
   private var trashView: TextView? = null
   private var isTrashShown = false
 
@@ -78,7 +82,7 @@ class BubbleService : Service() {
           if (bubbles.isEmpty()) stopSelf()
           return START_NOT_STICKY
         }
-        addBubble(url)
+        addBubble(url, intent.getBooleanExtra(EXTRA_SECRET, false))
       }
       ACTION_CLEAR -> {
         clearAllBubbles()
@@ -99,7 +103,16 @@ class BubbleService : Service() {
 
   override fun onBind(intent: Intent?): IBinder? = null
 
-  private fun addBubble(url: String) {
+  private fun addBubble(url: String, secret: Boolean = false) {
+    if (bubbles.isEmpty()) {
+      stackBaseY = if (LinkPreferences.isBubbleRememberPos(this) &&
+        LinkPreferences.getBubbleY(this) >= 0
+      ) {
+        LinkPreferences.getBubbleY(this)
+      } else {
+        dp(120)
+      }
+    }
     if (bubbles.size >= MAX_BUBBLES) {
       val oldest = bubbles.removeAt(0)
       try {
@@ -141,11 +154,16 @@ class BubbleService : Service() {
       PixelFormat.TRANSLUCENT
     ).apply {
       gravity = Gravity.TOP or Gravity.START
-      x = screenWidth - size
-      y = dp(120) + bubbles.size * (size + dp(8))
+      val remember = LinkPreferences.isBubbleRememberPos(this@BubbleService)
+      x = if (remember && LinkPreferences.getBubbleSide(this@BubbleService) == 0) {
+        0
+      } else {
+        screenWidth - size
+      }
+      y = stackBaseY + bubbles.size * (size + dp(8))
     }
 
-    val item = BubbleItem(url = url, view = view, params = params)
+    val item = BubbleItem(url = url, view = view, params = params, secret = secret)
     setupTouchListener(item)
     bubbles.add(item)
     windowManager.addView(view, params)
@@ -222,10 +240,21 @@ class BubbleService : Service() {
             if (distance <= dp(80)) {
               removeBubble(item)
             } else {
-              item.params.x = if (bubbleCenterX < screenWidth / 2) 0 else screenWidth - size
+              val toLeft = bubbleCenterX < screenWidth / 2
+              item.params.x = if (toLeft) 0 else screenWidth - size
               try {
                 windowManager.updateViewLayout(item.view, item.params)
               } catch (_: Exception) {
+              }
+              if (LinkPreferences.isBubbleRememberPos(this@BubbleService)) {
+                if (bubbles.firstOrNull() === item) {
+                  stackBaseY = item.params.y
+                }
+                LinkPreferences.saveBubblePosition(
+                  this@BubbleService,
+                  if (toLeft) 0 else 1,
+                  stackBaseY
+                )
               }
             }
           }
@@ -243,8 +272,9 @@ class BubbleService : Service() {
 
   private fun relayoutBubbles() {
     val size = dp(BUBBLE_SIZE_DP)
+    val baseY = if (stackBaseY >= 0) stackBaseY else dp(120)
     bubbles.forEachIndexed { index, item ->
-      item.params.y = dp(120) + index * (size + dp(8))
+      item.params.y = baseY + index * (size + dp(8))
       try {
         windowManager.updateViewLayout(item.view, item.params)
       } catch (_: Exception) {
@@ -298,10 +328,10 @@ class BubbleService : Service() {
     removeBubble(item)
     // Tapping a bubble opens the overlay window directly, staying on
     // top of the current app instead of switching to a full activity.
-    if (OverlayService.open(this, item.url)) {
+    if (OverlayService.open(this, item.url, secret = item.secret)) {
       return
     }
-    val intent = BrowserActivity.createDirectIntent(this, item.url)
+    val intent = BrowserActivity.createDirectIntent(this, item.url, item.secret)
       .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
     startActivity(intent)
   }
@@ -313,7 +343,7 @@ class BubbleService : Service() {
       openBubble(item)
       return
     }
-    if (!OverlayService.open(this, item.url, peek = true)) {
+    if (!OverlayService.open(this, item.url, peek = true, secret = item.secret)) {
       openBubble(item)
     }
   }
@@ -387,6 +417,7 @@ class BubbleService : Service() {
 
   companion object {
     const val EXTRA_URL = "arun.com.chromer.bubbles.EXTRA_URL"
+    const val EXTRA_SECRET = "arun.com.chromer.bubbles.EXTRA_SECRET"
     private const val ACTION_ADD = "arun.com.chromer.bubbles.ACTION_ADD"
     private const val ACTION_CLEAR = "arun.com.chromer.bubbles.ACTION_CLEAR"
 
@@ -409,13 +440,14 @@ class BubbleService : Service() {
       0xFFFF7043.toInt()
     )
 
-    fun open(context: Context, url: String): Boolean {
+    fun open(context: Context, url: String, secret: Boolean = false): Boolean {
       if (!OverlayService.canDrawOverlays(context)) return false
       return try {
         context.startForegroundService(
           Intent(context, BubbleService::class.java)
             .setAction(ACTION_ADD)
             .putExtra(EXTRA_URL, url)
+            .putExtra(EXTRA_SECRET, secret)
         )
         true
       } catch (_: Exception) {
