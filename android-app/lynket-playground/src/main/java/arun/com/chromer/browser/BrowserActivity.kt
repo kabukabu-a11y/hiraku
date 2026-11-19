@@ -100,6 +100,7 @@ import arun.com.chromer.article.ArticleActivity
 import arun.com.chromer.customtab.LinkDispatcher
 import arun.com.chromer.customtab.LinkPreferences
 import arun.com.chromer.customtab.OpenMethod
+import arun.com.chromer.customtab.displayLabel
 import arun.com.chromer.history.HistoryStore
 import arun.com.chromer.overlay.OverlayService
 import arun.com.chromer.tabs.TabStore
@@ -134,10 +135,11 @@ class BrowserActivity : ComponentActivity() {
       finish()
       return
     }
+    val secret = intent.getBooleanExtra(EXTRA_SECRET, false)
 
     setContent {
       LynketTheme {
-        BrowserScreen(initialUrl = initialUrl)
+        BrowserScreen(initialUrl = initialUrl, secret = secret)
       }
     }
   }
@@ -162,7 +164,7 @@ class BrowserActivity : ComponentActivity() {
   @OptIn(ExperimentalMaterial3Api::class)
   @SuppressLint("SetJavaScriptEnabled")
   @Composable
-  private fun BrowserScreen(initialUrl: String) {
+  private fun BrowserScreen(initialUrl: String, secret: Boolean = false) {
     val context = LocalContext.current
     var currentUrl by remember { mutableStateOf(initialUrl) }
     var pageTitle by remember { mutableStateOf<String?>(null) }
@@ -192,6 +194,13 @@ class BrowserActivity : ComponentActivity() {
           )
         }
         Column(modifier = Modifier.weight(1f)) {
+          if (secret) {
+            Text(
+              text = stringResource(R.string.secret_mode),
+              style = MaterialTheme.typography.labelSmall,
+              color = MaterialTheme.colorScheme.primary
+            )
+          }
           Text(
             text = pageTitle?.takeIf { it.isNotBlank() } ?: currentUrl,
             maxLines = 1,
@@ -382,14 +391,14 @@ class BrowserActivity : ComponentActivity() {
                   .clickable {
                     chooserVisible = false
                     if (method != OpenMethod.CANCEL) {
-                      LinkDispatcher.open(this@BrowserActivity, currentUrl, method)
+                      LinkDispatcher.open(this@BrowserActivity, currentUrl, method, secret)
                       finish()
                     }
                   }
                   .padding(vertical = 10.dp)
               ) {
                 Text(
-                  text = stringResource(method.labelRes),
+                  text = method.displayLabel(context),
                   style = MaterialTheme.typography.bodyLarge
                 )
               }
@@ -524,7 +533,7 @@ class BrowserActivity : ComponentActivity() {
                   canGoBack = view?.canGoBack() == true
                   canGoForward = view?.canGoForward() == true
                   val finishedUrl = view?.url ?: url
-                  if (finishedUrl != null && (finishedUrl.startsWith("http://") || finishedUrl.startsWith("https://"))) {
+                  if (!secret && finishedUrl != null && (finishedUrl.startsWith("http://") || finishedUrl.startsWith("https://"))) {
                     val finishedTitle = view?.title ?: finishedUrl
                     HistoryStore.record(context, finishedUrl, finishedTitle)
                     TabStore.upsert(context, finishedUrl, finishedTitle)
@@ -576,6 +585,7 @@ class BrowserActivity : ComponentActivity() {
   companion object {
     const val EXTRA_URL = "arun.com.chromer.extra.URL"
     const val EXTRA_FORCE_IN_APP = "arun.com.chromer.extra.FORCE_IN_APP"
+    const val EXTRA_SECRET = "arun.com.chromer.extra.SECRET"
 
     private val SCHEME_REGEX = Regex("^[a-zA-Z][a-zA-Z0-9+.-]*://.*")
 
@@ -585,8 +595,11 @@ class BrowserActivity : ComponentActivity() {
       }
     }
 
-    fun createDirectIntent(context: Context, url: String): Intent =
-      createIntent(context, url).apply { putExtra(EXTRA_FORCE_IN_APP, true) }
+    fun createDirectIntent(context: Context, url: String, secret: Boolean = false): Intent =
+      createIntent(context, url).apply {
+        putExtra(EXTRA_FORCE_IN_APP, true)
+        putExtra(EXTRA_SECRET, secret)
+      }
 
     fun normalizeUrl(rawUrl: String): String {
       val trimmed = rawUrl.trim()
