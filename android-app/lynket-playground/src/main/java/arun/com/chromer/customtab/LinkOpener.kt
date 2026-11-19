@@ -138,7 +138,7 @@ object LinkPreferences {
   fun setSecondaryProviderPackage(context: Context, packageName: String?) {
     prefs(context).edit().apply {
       if (packageName == null) {
-        remove(KEY_PROVIDER_PACKAGE)
+        remove(KEY_SECONDARY_PROVIDER_PACKAGE)
       } else {
         putString(KEY_SECONDARY_PROVIDER_PACKAGE, packageName)
       }
@@ -305,6 +305,173 @@ object LinkPreferences {
 
   fun setLanguage(context: Context, language: String) {
     prefs(context).edit().putString(KEY_LANGUAGE, language).apply()
+  }
+
+  // ----- v2.1.0: security check -----
+
+  private const val KEY_SECURITY_CHECK = "security_check_enabled"
+
+  fun isSecurityCheckEnabled(context: Context): Boolean {
+    return prefs(context).getBoolean(KEY_SECURITY_CHECK, true)
+  }
+
+  fun setSecurityCheckEnabled(context: Context, enabled: Boolean) {
+    prefs(context).edit().putBoolean(KEY_SECURITY_CHECK, enabled).apply()
+  }
+
+  // ----- v2.1.0: secret mode -----
+
+  private const val KEY_SECRET_GLOBAL = "secret_global"
+  private const val KEY_SECRET_APPS = "secret_apps"
+
+  fun isSecretGlobal(context: Context): Boolean {
+    return prefs(context).getBoolean(KEY_SECRET_GLOBAL, false)
+  }
+
+  fun setSecretGlobal(context: Context, enabled: Boolean) {
+    prefs(context).edit().putBoolean(KEY_SECRET_GLOBAL, enabled).apply()
+  }
+
+  fun getSecretApps(context: Context): Set<String> {
+    val raw = prefs(context).getString(KEY_SECRET_APPS, null)
+    if (raw.isNullOrBlank()) return emptySet()
+    return raw.split(",").map { it.trim() }.filter { it.isNotEmpty() }.toSet()
+  }
+
+  fun setAppSecret(context: Context, packageName: String, secret: Boolean) {
+    val current = getSecretApps(context).toMutableSet()
+    if (secret) {
+      current.add(packageName)
+    } else {
+      current.remove(packageName)
+    }
+    prefs(context).edit().putString(KEY_SECRET_APPS, current.joinToString(",")).apply()
+  }
+
+  /** Secret mode applies globally or to links coming from [referrerPackage]. */
+  fun isSecret(context: Context, referrerPackage: String?): Boolean {
+    if (isSecretGlobal(context)) return true
+    if (referrerPackage.isNullOrBlank()) return false
+    return getSecretApps(context).contains(referrerPackage)
+  }
+
+  // ----- v2.1.0: link share targets (up to 5 apps) -----
+
+  private const val KEY_SHARE_TARGETS = "share_targets"
+  const val MAX_SHARE_TARGETS = 5
+
+  fun getShareTargets(context: Context): List<String> {
+    val raw = prefs(context).getString(KEY_SHARE_TARGETS, null)
+    if (raw.isNullOrBlank()) return emptyList()
+    return raw.split(",").map { it.trim() }.filter { it.isNotEmpty() }
+      .take(MAX_SHARE_TARGETS)
+  }
+
+  fun setShareTargets(context: Context, packages: List<String>) {
+    val trimmed = packages.filter { it.isNotBlank() }.take(MAX_SHARE_TARGETS)
+    prefs(context).edit().putString(KEY_SHARE_TARGETS, trimmed.joinToString(",")).apply()
+  }
+
+  // ----- v2.1.0: bubble position memory -----
+
+  private const val KEY_BUBBLE_REMEMBER = "bubble_remember_pos"
+  private const val KEY_BUBBLE_SIDE = "bubble_side"
+  private const val KEY_BUBBLE_Y = "bubble_y"
+
+  fun isBubbleRememberPos(context: Context): Boolean {
+    return prefs(context).getBoolean(KEY_BUBBLE_REMEMBER, true)
+  }
+
+  fun setBubbleRememberPos(context: Context, enabled: Boolean) {
+    prefs(context).edit().putBoolean(KEY_BUBBLE_REMEMBER, enabled).apply()
+  }
+
+  /** Saved dock side: 0 = left, 1 = right, -1 = never saved. */
+  fun getBubbleSide(context: Context): Int {
+    return prefs(context).getInt(KEY_BUBBLE_SIDE, -1)
+  }
+
+  fun getBubbleY(context: Context): Int {
+    return prefs(context).getInt(KEY_BUBBLE_Y, -1)
+  }
+
+  fun saveBubblePosition(context: Context, side: Int, y: Int) {
+    prefs(context).edit()
+      .putInt(KEY_BUBBLE_SIDE, side)
+      .putInt(KEY_BUBBLE_Y, y)
+      .apply()
+  }
+
+  // ----- v2.1.0: overlay window geometry memory -----
+
+  private const val KEY_OVERLAY_X = "overlay_geo_x"
+  private const val KEY_OVERLAY_Y = "overlay_geo_y"
+  private const val KEY_OVERLAY_W = "overlay_geo_w"
+  private const val KEY_OVERLAY_H = "overlay_geo_h"
+
+  /** Saved overlay geometry as [x, y, width, height] in px, or null. */
+  fun getOverlayGeometry(context: Context): IntArray? {
+    val p = prefs(context)
+    if (!p.contains(KEY_OVERLAY_X)) return null
+    return intArrayOf(
+      p.getInt(KEY_OVERLAY_X, 0),
+      p.getInt(KEY_OVERLAY_Y, 0),
+      p.getInt(KEY_OVERLAY_W, 0),
+      p.getInt(KEY_OVERLAY_H, 0)
+    )
+  }
+
+  fun saveOverlayGeometry(context: Context, x: Int, y: Int, width: Int, height: Int) {
+    prefs(context).edit()
+      .putInt(KEY_OVERLAY_X, x)
+      .putInt(KEY_OVERLAY_Y, y)
+      .putInt(KEY_OVERLAY_W, width)
+      .putInt(KEY_OVERLAY_H, height)
+      .apply()
+  }
+
+  fun clearOverlayGeometry(context: Context) {
+    prefs(context).edit()
+      .remove(KEY_OVERLAY_X)
+      .remove(KEY_OVERLAY_Y)
+      .remove(KEY_OVERLAY_W)
+      .remove(KEY_OVERLAY_H)
+      .apply()
+  }
+}
+
+/**
+ * The label shown for this method in chooser UIs and menus. For the
+ * browser methods, the generic wording is replaced by the actual
+ * browser app name the user picked (v2.1.0, item 8).
+ */
+fun OpenMethod.displayLabel(context: Context): String {
+  val base = context.getString(labelRes)
+  fun appLabel(packageName: String?): String? {
+    if (packageName.isNullOrBlank() || packageName == context.packageName) return null
+    return try {
+      context.packageManager
+        .getApplicationLabel(context.packageManager.getApplicationInfo(packageName, 0))
+        .toString()
+    } catch (_: Exception) {
+      null
+    }
+  }
+  return when (this) {
+    OpenMethod.CUSTOM_TAB_PRIMARY ->
+      appLabel(CustomTabProviders.resolveProvider(context))
+        ?.let { "$it (Custom Tab)" } ?: base
+    OpenMethod.NORMAL_PRIMARY ->
+      appLabel(CustomTabProviders.resolveProvider(context)) ?: base
+    OpenMethod.CUSTOM_TAB_SECONDARY ->
+      appLabel(LinkPreferences.getSecondaryProviderPackage(context))
+        ?.let { "$it (Custom Tab)" } ?: base
+    OpenMethod.NORMAL_SECONDARY ->
+      appLabel(LinkPreferences.getSecondaryProviderPackage(context)) ?: base
+    OpenMethod.CUSTOM_TAB_SYSTEM ->
+      appLabel(CustomTabProviders.getSystemDefaultProvider(context))
+        ?.let { "$it (Custom Tab)" } ?: base
+    else -> base
   }
 }
 
