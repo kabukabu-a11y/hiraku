@@ -24,6 +24,7 @@ import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.os.Bundle
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.Image
@@ -42,6 +43,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Checkbox
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -49,12 +52,14 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import arun.com.chromer.R
 import androidx.compose.ui.res.stringResource
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -68,7 +73,10 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import arun.com.chromer.customtab.LinkPreferences
 import arun.com.chromer.customtab.OpenMethod
+import arun.com.chromer.customtab.displayLabel
 import arun.com.chromer.theme.LynketTheme
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 private data class InstalledApp(
   val packageName: String,
@@ -85,9 +93,23 @@ class AppRulesActivity : ComponentActivity() {
 
   override fun onCreate(savedInstanceState: Bundle?) {
     super.onCreate(savedInstanceState)
+    val mode = intent.getStringExtra(EXTRA_MODE) ?: MODE_RULES
     setContent {
       LynketTheme {
-        AppRulesScreen(onBack = { finish() })
+        AppRulesScreen(mode = mode, onBack = { finish() })
+      }
+    }
+  }
+
+  companion object {
+    const val EXTRA_MODE = "arun.com.chromer.apps.EXTRA_MODE"
+    const val MODE_RULES = "rules"
+    const val MODE_SECRET = "secret"
+    const val MODE_SHARE = "share"
+
+    fun createIntent(context: android.content.Context, mode: String): Intent {
+      return Intent(context, AppRulesActivity::class.java).apply {
+        putExtra(EXTRA_MODE, mode)
       }
     }
   }
@@ -95,11 +117,22 @@ class AppRulesActivity : ComponentActivity() {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun AppRulesScreen(onBack: () -> Unit) {
+private fun AppRulesScreen(mode: String, onBack: () -> Unit) {
   val context = LocalContext.current
-  val apps = remember { loadInstalledApps(context) }
+  // Loading the app list (PackageManager query + icon rasterizing)
+  // used to run on the main thread during the first composition,
+  // which made this screen stutter on open. It now loads on IO and
+  // the list appears when ready (v2.1.0).
+  var apps by remember { mutableStateOf<List<InstalledApp>>(emptyList()) }
+  var loading by remember { mutableStateOf(true) }
+  LaunchedEffect(Unit) {
+    apps = withContext(Dispatchers.IO) { loadInstalledApps(context) }
+    loading = false
+  }
   val defaultMethod = remember { LinkPreferences.getDefaultMethod(context) }
   var rules by remember { mutableStateOf(LinkPreferences.getAppRules(context)) }
+  var secretApps by remember { mutableStateOf(LinkPreferences.getSecretApps(context)) }
+  var shareTargets by remember { mutableStateOf(LinkPreferences.getShareTargets(context)) }
   var query by remember { mutableStateOf("") }
   var editingApp by remember { mutableStateOf<InstalledApp?>(null) }
 
@@ -118,7 +151,17 @@ private fun AppRulesScreen(onBack: () -> Unit) {
   Scaffold(
     topBar = {
       TopAppBar(
-        title = { Text(stringResource(R.string.app_rules_title)) },
+        title = {
+          Text(
+            stringResource(
+              when (mode) {
+                AppRulesActivity.MODE_SECRET -> R.string.secret_apps_title
+                AppRulesActivity.MODE_SHARE -> R.string.share_targets_title
+                else -> R.string.app_rules_title
+              }
+            )
+          )
+        },
         navigationIcon = {
           IconButton(onClick = onBack) {
             Icon(Icons.Filled.ArrowBack, contentDescription = stringResource(R.string.act_back))
@@ -143,18 +186,65 @@ private fun AppRulesScreen(onBack: () -> Unit) {
           .padding(16.dp)
       )
       Text(
-        text = stringResource(R.string.app_rules_default_note, stringResource(defaultMethod.labelRes)),
+        text = when (mode) {
+          AppRulesActivity.MODE_SECRET -> stringResource(R.string.secret_apps_desc)
+          AppRulesActivity.MODE_SHARE -> stringResource(
+            R.string.settings_share_targets_desc
+          )
+          else -> stringResource(
+            R.string.app_rules_default_note,
+            defaultMethod.displayLabel(context)
+          )
+        },
         style = MaterialTheme.typography.bodySmall,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
         modifier = Modifier.padding(horizontal = 16.dp)
       )
+      if (loading) {
+        Column(
+          modifier = Modifier
+            .fillMaxSize()
+            .padding(32.dp),
+          horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+          CircularProgressIndicator()
+        }
+      }
       LazyColumn(modifier = Modifier.fillMaxSize()) {
         items(filtered, key = { it.packageName }) { app ->
           val rule = rules[app.packageName]
+          val isSecret = app.packageName in secretApps
+          val isShareTarget = app.packageName in shareTargets
           Row(
             modifier = Modifier
               .fillMaxWidth()
-              .clickable { editingApp = app }
+              .clickable {
+                when (mode) {
+                  AppRulesActivity.MODE_SECRET -> {
+                    val newValue = !isSecret
+                    LinkPreferences.setAppSecret(context, app.packageName, newValue)
+                    secretApps = LinkPreferences.getSecretApps(context)
+                  }
+                  AppRulesActivity.MODE_SHARE -> {
+                    if (isShareTarget) {
+                      val updated = shareTargets - app.packageName
+                      LinkPreferences.setShareTargets(context, updated)
+                      shareTargets = updated
+                    } else if (shareTargets.size >= LinkPreferences.MAX_SHARE_TARGETS) {
+                      Toast.makeText(
+                        context,
+                        context.getString(R.string.share_max),
+                        Toast.LENGTH_SHORT
+                      ).show()
+                    } else {
+                      val updated = shareTargets + app.packageName
+                      LinkPreferences.setShareTargets(context, updated)
+                      shareTargets = updated
+                    }
+                  }
+                  else -> editingApp = app
+                }
+              }
               .padding(horizontal = 16.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically
           ) {
@@ -173,15 +263,35 @@ private fun AppRulesScreen(onBack: () -> Unit) {
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
               )
-              Text(
-                text = rule?.let { stringResource(it.labelRes) } ?: stringResource(R.string.app_rules_default_badge),
-                style = MaterialTheme.typography.bodySmall,
-                color = if (rule != null) {
-                  MaterialTheme.colorScheme.primary
-                } else {
-                  MaterialTheme.colorScheme.onSurfaceVariant
-                }
-              )
+              if (mode == AppRulesActivity.MODE_RULES) {
+                Text(
+                  text = rule?.let { it.displayLabel(context) }
+                    ?: stringResource(R.string.app_rules_default_badge),
+                  style = MaterialTheme.typography.bodySmall,
+                  color = if (rule != null) {
+                    MaterialTheme.colorScheme.primary
+                  } else {
+                    MaterialTheme.colorScheme.onSurfaceVariant
+                  }
+                )
+              }
+            }
+            when (mode) {
+              AppRulesActivity.MODE_SECRET -> {
+                Switch(
+                  checked = isSecret,
+                  onCheckedChange = { newValue ->
+                    LinkPreferences.setAppSecret(context, app.packageName, newValue)
+                    secretApps = LinkPreferences.getSecretApps(context)
+                  }
+                )
+              }
+              AppRulesActivity.MODE_SHARE -> {
+                Checkbox(
+                  checked = isShareTarget,
+                  onCheckedChange = null
+                )
+              }
             }
           }
         }
@@ -198,7 +308,10 @@ private fun AppRulesScreen(onBack: () -> Unit) {
       text = {
         Column {
           MethodChoiceRow(
-            label = stringResource(R.string.app_rules_default_option, stringResource(defaultMethod.labelRes)),
+            label = stringResource(
+              R.string.app_rules_default_option,
+              defaultMethod.displayLabel(context)
+            ),
             selected = current == null,
             onSelect = {
               LinkPreferences.setAppRule(context, app.packageName, null)
@@ -208,7 +321,7 @@ private fun AppRulesScreen(onBack: () -> Unit) {
           )
           for (method in OpenMethod.CHOICES) {
             MethodChoiceRow(
-              label = stringResource(method.labelRes),
+              label = method.displayLabel(context),
               selected = current == method,
               onSelect = {
                 LinkPreferences.setAppRule(context, app.packageName, method)
@@ -264,11 +377,10 @@ private fun loadInstalledApps(context: android.content.Context): List<InstalledA
     }
     val icon = try {
       val drawable = packageManager.getApplicationIcon(pkg)
-      val width = drawable.intrinsicWidth.coerceAtLeast(1)
-      val height = drawable.intrinsicHeight.coerceAtLeast(1)
-      val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+      val size = 96
+      val bitmap = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
       val canvas = Canvas(bitmap)
-      drawable.setBounds(0, 0, width, height)
+      drawable.setBounds(0, 0, size, size)
       drawable.draw(canvas)
       bitmap.asImageBitmap()
     } catch (_: Exception) {
