@@ -65,6 +65,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import arun.com.chromer.apps.AppRulesActivity
 import arun.com.chromer.customtab.LinkPreferences
 import arun.com.chromer.history.HistoryStore
 import arun.com.chromer.tabs.TabStore
@@ -99,6 +100,9 @@ private fun SettingsScreen(onBack: () -> Unit) {
   var language by remember { mutableStateOf(LinkPreferences.getLanguage(context)) }
   var chooserOrder by remember { mutableStateOf(LinkPreferences.getChooserOrder(context)) }
   var hiddenMethods by remember { mutableStateOf(LinkPreferences.getHiddenMethods(context)) }
+  var securityCheck by remember { mutableStateOf(LinkPreferences.isSecurityCheckEnabled(context)) }
+  var secretGlobal by remember { mutableStateOf(LinkPreferences.isSecretGlobal(context)) }
+  var bubbleRemember by remember { mutableStateOf(LinkPreferences.isBubbleRememberPos(context)) }
 
   Scaffold(
     topBar = {
@@ -159,6 +163,15 @@ private fun SettingsScreen(onBack: () -> Unit) {
             hideBar = it
           }
         )
+        SwitchRow(
+          title = stringResource(R.string.settings_bubble_remember),
+          description = stringResource(R.string.settings_bubble_remember_desc),
+          checked = bubbleRemember,
+          onCheckedChange = {
+            LinkPreferences.setBubbleRememberPos(context, it)
+            bubbleRemember = it
+          }
+        )
       }
 
       SettingsCard(title = stringResource(R.string.settings_browsing)) {
@@ -179,6 +192,52 @@ private fun SettingsScreen(onBack: () -> Unit) {
             LinkPreferences.setPreviewEnabled(context, it)
             preview = it
           }
+        )
+      }
+
+      SettingsCard(title = stringResource(R.string.settings_privacy)) {
+        SwitchRow(
+          title = stringResource(R.string.settings_security_check),
+          description = stringResource(R.string.settings_security_check_desc),
+          checked = securityCheck,
+          onCheckedChange = {
+            LinkPreferences.setSecurityCheckEnabled(context, it)
+            securityCheck = it
+          }
+        )
+        SwitchRow(
+          title = stringResource(R.string.secret_global),
+          description = stringResource(R.string.secret_global_desc),
+          checked = secretGlobal,
+          onCheckedChange = {
+            LinkPreferences.setSecretGlobal(context, it)
+            secretGlobal = it
+          }
+        )
+        Spacer(modifier = Modifier.height(8.dp))
+        OutlinedButton(
+          onClick = {
+            context.startActivity(
+              AppRulesActivity.createIntent(context, AppRulesActivity.MODE_SECRET)
+            )
+          }
+        ) {
+          Text(stringResource(R.string.secret_apps_title))
+        }
+        Spacer(modifier = Modifier.height(8.dp))
+        OutlinedButton(
+          onClick = {
+            context.startActivity(
+              AppRulesActivity.createIntent(context, AppRulesActivity.MODE_SHARE)
+            )
+          }
+        ) {
+          Text(stringResource(R.string.settings_share_targets))
+        }
+        Text(
+          text = stringResource(R.string.settings_share_targets_desc),
+          style = MaterialTheme.typography.bodySmall,
+          color = MaterialTheme.colorScheme.onSurfaceVariant
         )
       }
 
