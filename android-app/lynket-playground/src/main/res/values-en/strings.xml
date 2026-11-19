@@ -146,7 +146,7 @@
     <string name="secret_global">Secret mode (everywhere)</string>
     <string name="secret_global_desc">Open every link without leaving history or tab records</string>
     <string name="secret_apps_title">Secret-mode apps</string>
-    <string name="secret_apps_desc">Links from the chosen apps won't be recorded in history or tabs</string>
+    <string name="secret_apps_desc">Links from the chosen apps will not be recorded in history or tabs</string>
     <string name="settings_privacy">Privacy &amp; security</string>
     <string name="settings_security_check">URL security check</string>
     <string name="settings_security_check_desc">Warn before opening suspicious URLs</string>
