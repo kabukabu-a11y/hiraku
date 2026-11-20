@@ -20,6 +20,9 @@
 
 package arun.com.chromer.bubbles
 
+import android.animation.Animator
+import android.animation.AnimatorListenerAdapter
+import android.animation.ValueAnimator
 import android.annotation.SuppressLint
 import android.app.Notification
 import android.app.NotificationChannel
@@ -45,6 +48,8 @@ import android.view.HapticFeedbackConstants
 import android.view.MotionEvent
 import android.view.View
 import android.view.WindowManager
+import android.view.animation.Interpolator
+import android.view.animation.OvershootInterpolator
 import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.TextView
@@ -54,6 +59,7 @@ import arun.com.chromer.customtab.LinkPreferences
 import arun.com.chromer.home.HomeActivity
 import arun.com.chromer.overlay.OverlayService
 import arun.com.chromer.ui.glassViewColor
+import arun.com.chromer.ui.occInterpolator
 import java.net.HttpURLConnection
 import java.net.URL
 import kotlin.math.abs
@@ -69,7 +75,8 @@ class BubbleService : Service() {
     var background: GradientDrawable? = null,
     var letterView: TextView? = null,
     var badgeImage: ImageView? = null,
-    var badgeLetter: TextView? = null
+    var badgeLetter: TextView? = null,
+    var animator: ValueAnimator? = null
   )
 
   private lateinit var windowManager: WindowManager
@@ -236,6 +243,20 @@ class BubbleService : Service() {
     setupTouchListener(item)
     bubbles.add(item)
     windowManager.addView(view, params)
+    // Entry animation (v2.3.1 item 60): pop in with a soft spring
+    // instead of appearing instantly.
+    if (LinkPreferences.getAnimLevel(this) != LinkPreferences.ANIM_OFF) {
+      view.scaleX = 0.4f
+      view.scaleY = 0.4f
+      view.alpha = 0f
+      view.animate()
+        .scaleX(1f)
+        .scaleY(1f)
+        .alpha(1f)
+        .setDuration(280)
+        .setInterpolator(OvershootInterpolator(1.1f))
+        .start()
+    }
     relayoutBubbles()
     updateNotification()
     if (!host.isNullOrBlank()) {
@@ -350,6 +371,8 @@ class BubbleService : Service() {
       val size = dp(BUBBLE_SIZE_DP)
       when (event.action) {
         MotionEvent.ACTION_DOWN -> {
+          item.animator?.cancel()
+          item.animator = null
           downX = item.params.x
           downY = item.params.y
           rawDownX = event.rawX
@@ -383,42 +406,66 @@ class BubbleService : Service() {
               (bubbleCenterX - trashCenterX).toDouble(),
               (bubbleCenterY - trashCenterY).toDouble()
             )
-            setTrashHot(distance <= dp(80), item.view)
+            // Generous hit area (v2.3.1 item 61): the v2.3.0
+            // radius was easy to miss, so the trash rarely fired.
+            setTrashHot(distance <= dp(120), item.view)
           }
           true
         }
         MotionEvent.ACTION_UP -> {
           handler.removeCallbacks(longPressRunnable)
+          // Capture the hot state BEFORE resetting it: v2.3.0
+          // reset trashHot first, so the drop-on-trash branch
+          // below could never fire and bubbles never deleted
+          // (item 61).
+          val wasHot = trashHot
           setTrashHot(false, item.view)
           hideTrash()
           if (longPressed) {
             // Preview already opened; keep the bubble where it is.
           } else if (!moved) {
             openBubble(item)
+          } else if (wasHot) {
+            removeBubble(item, animate = true)
           } else {
+            // Snap back to the docked edge and the bubble's stack
+            // slot with a spring (v2.3.1 item 60) instead of the
+            // v2.3.0 instant teleport.
             val metrics = resources.displayMetrics
             val screenWidth = metrics.widthPixels
             val bubbleCenterX = item.params.x + size / 2
-            if (trashHot) {
-              setTrashHot(false, item.view)
-              removeBubble(item)
-            } else {
-              val toLeft = bubbleCenterX < screenWidth / 2
-              item.params.x = if (toLeft) 0 else screenWidth - size
+            val toLeft = bubbleCenterX < screenWidth / 2
+            val targetX = if (toLeft) 0 else screenWidth - size
+            val index = bubbles.indexOf(item).coerceAtLeast(0)
+            val baseY = if (stackBaseY >= 0) stackBaseY else dp(120)
+            val targetY = baseY + index * (size + dp(8))
+            if (LinkPreferences.getAnimLevel(this@BubbleService) ==
+              LinkPreferences.ANIM_OFF
+            ) {
+              item.params.x = targetX
+              item.params.y = targetY
               try {
                 windowManager.updateViewLayout(item.view, item.params)
               } catch (_: Exception) {
               }
-              if (LinkPreferences.isBubbleRememberPos(this@BubbleService)) {
-                if (bubbles.firstOrNull() === item) {
-                  stackBaseY = item.params.y
-                }
-                LinkPreferences.saveBubblePosition(
-                  this@BubbleService,
-                  if (toLeft) 0 else 1,
-                  stackBaseY
-                )
+            } else {
+              animateBubbleTo(
+                item,
+                targetX,
+                targetY,
+                340L,
+                OvershootInterpolator(0.7f)
+              )
+            }
+            if (LinkPreferences.isBubbleRememberPos(this@BubbleService)) {
+              if (bubbles.firstOrNull() === item) {
+                stackBaseY = targetY
               }
+              LinkPreferences.saveBubblePosition(
+                this@BubbleService,
+                if (toLeft) 0 else 1,
+                stackBaseY
+              )
             }
           }
           true
@@ -434,14 +481,61 @@ class BubbleService : Service() {
     }
   }
 
+  /** Animates a bubble's window position (snap-back, relayout). */
+  private fun animateBubbleTo(
+    item: BubbleItem,
+    toX: Int,
+    toY: Int,
+    duration: Long,
+    interpolator: Interpolator
+  ) {
+    item.animator?.cancel()
+    val fromX = item.params.x
+    val fromY = item.params.y
+    if (fromX == toX && fromY == toY) {
+      item.animator = null
+      return
+    }
+    val animator = ValueAnimator.ofFloat(0f, 1f).apply {
+      this.duration = duration
+      this.interpolator = interpolator
+      addUpdateListener { animation ->
+        val t = animation.animatedValue as Float
+        item.params.x = (fromX + (toX - fromX) * t).toInt()
+        item.params.y = (fromY + (toY - fromY) * t).toInt()
+        try {
+          windowManager.updateViewLayout(item.view, item.params)
+        } catch (_: Exception) {
+        }
+      }
+      addListener(object : AnimatorListenerAdapter() {
+        override fun onAnimationEnd(animation: Animator) {
+          if (item.animator === animation) {
+            item.animator = null
+          }
+        }
+      })
+    }
+    item.animator = animator
+    animator.start()
+  }
+
   private fun relayoutBubbles() {
     val size = dp(BUBBLE_SIZE_DP)
     val baseY = if (stackBaseY >= 0) stackBaseY else dp(120)
+    val animate = LinkPreferences.getAnimLevel(this) != LinkPreferences.ANIM_OFF
     bubbles.forEachIndexed { index, item ->
-      item.params.y = baseY + index * (size + dp(8))
-      try {
-        windowManager.updateViewLayout(item.view, item.params)
-      } catch (_: Exception) {
+      val targetY = baseY + index * (size + dp(8))
+      if (animate) {
+        // Slide into the new slot instead of teleporting when a
+        // bubble is added or removed (item 60).
+        animateBubbleTo(item, item.params.x, targetY, 260L, occInterpolator())
+      } else {
+        item.params.y = targetY
+        try {
+          windowManager.updateViewLayout(item.view, item.params)
+        } catch (_: Exception) {
+        }
       }
     }
   }
@@ -455,9 +549,19 @@ class BubbleService : Service() {
       if (hot) {
         0xE6FF3B30.toInt()
       } else {
-        glassViewColor(true, LinkPreferences.isGlassEnabled(this))
+        glassViewColor(
+          true,
+          LinkPreferences.isGlassEnabled(this),
+          LinkPreferences.getGlassStrength(this)
+        )
       }
     )
+    // The target grows while hot, matching the enlarged hit area.
+    trashView?.animate()
+      ?.scaleX(if (hot) 1.18f else 1f)
+      ?.scaleY(if (hot) 1.18f else 1f)
+      ?.setDuration(150)
+      ?.start()
     if (hot) {
       try {
         anchor.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
@@ -472,7 +576,13 @@ class BubbleService : Service() {
     val view = trashView ?: FrameLayout(this).apply {
       background = GradientDrawable().apply {
         shape = GradientDrawable.OVAL
-        setColor(glassViewColor(true, LinkPreferences.isGlassEnabled(this@BubbleService)))
+        setColor(
+          glassViewColor(
+            true,
+            LinkPreferences.isGlassEnabled(this@BubbleService),
+            LinkPreferences.getGlassStrength(this@BubbleService)
+          )
+        )
         setStroke(dp(1), 0x66FFFFFF)
       }
       val icon = ImageView(this@BubbleService).apply {
@@ -548,13 +658,41 @@ class BubbleService : Service() {
     }
   }
 
-  private fun removeBubble(item: BubbleItem) {
+  private fun removeBubble(item: BubbleItem, animate: Boolean = false) {
+    item.animator?.cancel()
+    item.animator = null
+    bubbles.remove(item)
+    relayoutBubbles()
+    if (animate &&
+      LinkPreferences.getAnimLevel(this) != LinkPreferences.ANIM_OFF
+    ) {
+      // Shrink away before the view leaves the window (item 60).
+      val wasLast = bubbles.isEmpty()
+      item.view.animate()
+        .scaleX(0.3f)
+        .scaleY(0.3f)
+        .alpha(0f)
+        .setDuration(170)
+        .setInterpolator(occInterpolator())
+        .withEndAction {
+          try {
+            windowManager.removeView(item.view)
+          } catch (_: Exception) {
+          }
+          if (wasLast) {
+            stopSelf()
+          }
+        }
+        .start()
+      if (!wasLast) {
+        updateNotification()
+      }
+      return
+    }
     try {
       windowManager.removeView(item.view)
     } catch (_: Exception) {
     }
-    bubbles.remove(item)
-    relayoutBubbles()
     if (bubbles.isEmpty()) {
       stopSelf()
     } else {
@@ -564,6 +702,8 @@ class BubbleService : Service() {
 
   private fun clearAllBubbles() {
     for (item in bubbles) {
+      item.animator?.cancel()
+      item.animator = null
       try {
         windowManager.removeView(item.view)
       } catch (_: Exception) {
