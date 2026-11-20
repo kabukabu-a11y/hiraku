@@ -484,13 +484,10 @@ class BubbleService : Service() {
   }
 
   private fun openBubble(item: BubbleItem) {
-    val size = dp(BUBBLE_SIZE_DP)
-    val fromRect = intArrayOf(item.params.x, item.params.y, size, size)
     removeBubble(item)
     // Tapping a bubble opens the overlay window directly, staying on
     // top of the current app instead of switching to a full activity.
-    // The window grows out of the bubble along a curve (v2.3.0).
-    if (OverlayService.open(this, item.url, secret = item.secret, fromRect = fromRect)) {
+    if (OverlayService.open(this, item.url, secret = item.secret)) {
       return
     }
     val intent = BrowserActivity.createDirectIntent(this, item.url, item.secret)
@@ -505,16 +502,7 @@ class BubbleService : Service() {
       openBubble(item)
       return
     }
-    val size = dp(BUBBLE_SIZE_DP)
-    val fromRect = intArrayOf(item.params.x, item.params.y, size, size)
-    if (!OverlayService.open(
-        this,
-        item.url,
-        peek = true,
-        secret = item.secret,
-        fromRect = fromRect
-      )
-    ) {
+    if (!OverlayService.open(this, item.url, peek = true, secret = item.secret)) {
       openBubble(item)
     }
   }
