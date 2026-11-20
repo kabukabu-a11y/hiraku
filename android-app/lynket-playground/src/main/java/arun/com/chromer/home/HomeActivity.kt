@@ -112,6 +112,7 @@ import arun.com.chromer.setup.SetupPreferences
 import arun.com.chromer.tabs.TabsActivity
 import arun.com.chromer.theme.LynketTheme
 import arun.com.chromer.ui.HirakuBottomBar
+import arun.com.chromer.ui.HirakuTabLabels
 import arun.com.chromer.ui.IosMotion
 import arun.com.chromer.ui.GlassTabSwitch
 import com.deliveryhero.whetstone.activity.ContributesActivityInjector
@@ -233,6 +234,31 @@ class HomeActivity : ComponentActivity(), HasInjector {
     }
     root.addView(glassView)
 
+    // v2.3.9 (item 96): a second, pill-sized liquid-glass
+    // view layered over the bar glass and under the bar
+    // composition. It slides with the indicator (fed by
+    // HirakuBottomBar's onPillPosition), so the refraction
+    // follows the pill instead of staying fixed to the bar
+    // body. Its width is set in root.post, once the real
+    // item width is known.
+    var pillItemWidthPx = 0f
+    val pillGlassView = LiquidGlassView(this).apply {
+      layoutParams = FrameLayout.LayoutParams(0, dp(54)).apply {
+        gravity = Gravity.BOTTOM or Gravity.START
+        leftMargin = dp(24)
+        bottomMargin = dp(12)
+      }
+      setCornerRadius(dp(27).toFloat())
+      setTintColorRed(1f)
+      setTintColorGreen(1f)
+      setTintColorBlue(1f)
+      setTintAlpha(0.10f)
+      setBlurRadius(24f)
+      isClickable = false
+      isFocusable = false
+    }
+    root.addView(pillGlassView)
+
     val barView = ComposeView(this).apply {
       setViewCompositionStrategy(
         ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed
@@ -248,7 +274,10 @@ class HomeActivity : ComponentActivity(), HasInjector {
           HirakuBottomBar(
             selectedIndex = tabState.intValue,
             onSelect = { tabState.intValue = it },
-            externalGlass = true
+            externalGlass = true,
+            onPillPosition = { pos ->
+              pillGlassView.translationX = pos * pillItemWidthPx
+            }
           )
         }
       }
@@ -256,7 +285,19 @@ class HomeActivity : ComponentActivity(), HasInjector {
     root.addView(barView)
 
     setContentView(root)
-    root.post { glassView.bind(contentView) }
+    root.post {
+      glassView.bind(contentView)
+      pillGlassView.bind(contentView)
+      val itemWidthPx =
+        (root.width - dp(40)).toFloat() / HirakuTabLabels.size
+      pillItemWidthPx = itemWidthPx
+      val lp = pillGlassView.layoutParams as FrameLayout.LayoutParams
+      lp.width = (itemWidthPx - dp(8)).toInt().coerceAtLeast(0)
+      pillGlassView.layoutParams = lp
+      // Settle the pill glass under the current tab.
+      pillGlassView.translationX =
+        tabState.intValue.toFloat() * itemWidthPx
+    }
   }
 
   override fun onNewIntent(intent: Intent) {

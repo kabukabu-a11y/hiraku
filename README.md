@@ -26,6 +26,13 @@ After installing, set Hiraku as your default browser so links from other apps ar
 - **URL security check (v2.1.0)**: warns before opening suspicious links (IP-address hosts, punycode domains, URLs with embedded user info). Can be turned off.
 - **And more**: article mode, tabs & history, desktop site toggle, a dedicated settings screen, and a Japanese / English UI (Settings → Language).
 
+## What's new in v2.3.9
+
+- **The liquid glass now follows the pill**: a second, pill-sized liquid-glass view is layered under the indicator and slides with its spring, so the refraction travels with the pill instead of staying fixed to the bar body. (Trial: tell us if the sync feels off.)
+- **Glass bubbles**: bubbles now get a real backdrop blur behind their site-color glass tint (Android never hands another app's pixels to us, so true refraction under a bubble isn't possible — the platform blur is the closest equivalent).
+- **Overlay resize grips are easier to grab**: the bar-corner grip touch area grows from 32dp to 44dp. The drawn arc is unchanged, and taps still reach the corner buttons.
+- **New size-only handle at the overlay's bottom edge**: a slim handle band (OPPO floating-window style). Dragging it vertically resizes the height, horizontally the width around the window's center. It never moves the window — size only.
+
 ## What's new in v2.3.8
 
 - **Bottom bar geometry aligned with MeiloX / Glasmio**: the bar surface is now 62dp tall (was 64dp) with a 54dp indicator pill and an 8dp bottom margin (was 10dp) — the exact metrics of Glasmio's GlassBottomBar as MeiloX ships it. The liquid-glass layer follows the same geometry. (The real glass stays on the main bottom bar only, by design choice.)
@@ -145,6 +152,13 @@ The ad-blocking list is built from the public [pgl.yoyo.org adservers](https://p
 - **共有先アプリを選択画面に（v2.3.0）**：クイック共有は廃止し、共有を受け付けるアプリが選択画面に「開き方」として直接並ぶようになりました（設定で追加・削除できます）
 - **URLセキュリティチェック（v2.1.0）**：IPアドレスへのリンク、国際化ドメイン（xn--）、ユーザー情報を含むURLなど、怪しいリンクを開く前に警告します（OFFにもできます）
 - **その他**：記事モード、タブと履歴、デスクトップサイト切替、細かい設定を集約した設定画面、日本語／英語の表示切替（設定 → 言語）
+
+## v2.3.9の新機能
+
+- **液体ガラスがピルに追従するようになりました**：ピルと同じ大きさの液体ガラスをもう1枚重ね、ピルのバネに合わせて滑らせるようにしました。屈折がバーの土台に固定されず、ピルと一緒に動きます（試験実装：同期のズレが気になったら教えてください）
+- **バブルもガラスに**：バブルの背後にシステムの背景ぼかしが入るようになりました（他アプリの上に浮くバブルは、そのアプリの画素を屈折させることがAndroidの仕組み上できないため、ぼかしで最も近い見た目にしています）。サイト色のガラス tint は従来どおりです
+- **オーバーレイのリサイズグリップの当たり判定を拡大**：バーの角グリップのタッチ範囲が32dp→44dpになりました。描かれる弧はそのまま、タップは角のボタンに届く仕組みも維持しています
+- **オーバーレイの下端にサイズ専用ハンドルを追加**：OPPOのフローティング窓風の細いハンドル帯です。縦に引くと高さ、横に引くと中心を保ったまま幅が変わります。位置は動きません（サイズのみ）
 
 ## v2.3.8の新機能
 

@@ -58,6 +58,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -141,13 +142,23 @@ fun HirakuBottomBar(
   // a LiquidGlassView layered underneath this composition (see
   // HomeActivity's layered setup); this composition then draws
   // only the shadow, the pill and the items.
-  externalGlass: Boolean = false
+  externalGlass: Boolean = false,
+  // v2.3.9 (item 96): reports the indicator's position (in
+  // tab units) on every frame it changes, so the layered
+  // setup can slide a second liquid-glass view under the
+  // pill and the refraction follows the pill's travel.
+  onPillPosition: ((Float) -> Unit)? = null
 ) {
   val context = LocalContext.current
   val animLevel = remember { LinkPreferences.getAnimLevel(context) }
   val glassOn = glassEnabled()
   val scope = rememberCoroutineScope()
   val position = remember { Animatable(selectedIndex.toFloat()) }
+  if (onPillPosition != null) {
+    LaunchedEffect(onPillPosition) {
+      snapshotFlow { position.value }.collect { onPillPosition(it) }
+    }
+  }
   val pressProgress = remember { Animatable(0f) }
   val scaleX = remember { Animatable(1f) }
   val scaleY = remember { Animatable(1f) }

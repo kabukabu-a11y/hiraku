@@ -451,6 +451,31 @@ class OverlayService : Service() {
       column.addView(progress)
       column.addView(bar)
     }
+    // v2.3.9 (item 99): a slim size-only handle band at the
+    // window's bottom edge (OPPO floating-window style; the
+    // user chose a handle over a button bar). It is the
+    // column's last child, so it sits below the bar when the
+    // bar is at the bottom, and below the page when the bar
+    // is on top. Dragging it resizes — never moves — the
+    // window (listener attached below, with the other
+    // geometry gestures).
+    val sizeBand = FrameLayout(this).apply {
+      layoutParams = LinearLayout.LayoutParams(
+        ViewGroup.LayoutParams.MATCH_PARENT, dp(18)
+      )
+      val bandPill = View(this@OverlayService).apply {
+        background = GradientDrawable().apply {
+          shape = GradientDrawable.RECTANGLE
+          cornerRadius = dp(2).toFloat()
+          setColor(0x59FFFFFF)
+        }
+        layoutParams = FrameLayout.LayoutParams(dp(44), dp(4)).apply {
+          gravity = Gravity.CENTER
+        }
+      }
+      addView(bandPill)
+    }
+    column.addView(sizeBand)
     root.addView(column)
 
     // v2.3.7 (item 93): no resize grip on the edge opposite the
@@ -549,6 +574,68 @@ class OverlayService : Service() {
             .coerceAtLeast(0)
           p.x = (initialX + (event.rawX - initialRawX).toInt()).coerceIn(0, maxX)
           p.y = (initialY + (event.rawY - initialRawY).toInt()).coerceIn(0, maxY)
+          try {
+            wm.updateViewLayout(r, p)
+          } catch (_: Exception) {
+          }
+          true
+        }
+
+        MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+          setBlurPaused(false)
+          saveGeometry()
+          v.performClick()
+          true
+        }
+
+        else -> false
+      }
+    }
+
+    // Item 99 listener: vertical drag resizes the height
+    // (the bottom edge follows the finger, the top edge
+    // stays); horizontal drag resizes the width around the
+    // window's horizontal center. The window's position
+    // never changes except to keep a widened window on
+    // screen — this handle is for size only.
+    var bandStartX = 0
+    var bandStartY = 0
+    var bandStartW = 0
+    var bandStartH = 0
+    var bandRawX = 0f
+    var bandRawY = 0f
+    sizeBand.setOnTouchListener { v, event ->
+      val wm = windowManager ?: return@setOnTouchListener false
+      val r = rootView ?: return@setOnTouchListener false
+      val p = layoutParams ?: return@setOnTouchListener false
+      when (event.actionMasked) {
+        MotionEvent.ACTION_DOWN -> {
+          setBlurPaused(true)
+          bandStartX = p.x
+          bandStartY = p.y
+          bandStartW = p.width
+          bandStartH = p.height
+          bandRawX = event.rawX
+          bandRawY = event.rawY
+          true
+        }
+
+        MotionEvent.ACTION_MOVE -> {
+          if (isMinimized) {
+            isMinimized = false
+            webView?.visibility = View.VISIBLE
+          }
+          isPeek = false
+          val dx = (event.rawX - bandRawX).toInt()
+          val dy = (event.rawY - bandRawY).toInt()
+          val newW = (bandStartW + 2 * dx).coerceIn(dp(260), screenWidth)
+          p.x = (bandStartX + (bandStartW - newW) / 2)
+            .coerceIn(0, (screenWidth - newW).coerceAtLeast(0))
+          p.width = newW
+          val maxH = (screenHeight - bottomGestureExclusionPx() - bandStartY)
+            .coerceAtLeast(dp(200))
+          p.height = (bandStartH + dy).coerceIn(dp(200), maxH)
+          p.y = bandStartY
           try {
             wm.updateViewLayout(r, p)
           } catch (_: Exception) {
@@ -699,7 +786,12 @@ class OverlayService : Service() {
         flipHorizontal = startSide,
         cornerRadiusPx = cornerRadius
       ).apply {
-        layoutParams = FrameLayout.LayoutParams(dp(32), dp(32)).apply {
+        // v2.3.9 (item 98): the touch box grows 32 -> 44dp
+        // so the corner is easier to grab; the drawn arc is
+        // anchored to the outer corner and does not move,
+        // and taps still forward to the corner buttons
+        // (item 91), so the bigger box costs no button area.
+        layoutParams = FrameLayout.LayoutParams(dp(44), dp(44)).apply {
           gravity = (if (barOnTop) Gravity.TOP else Gravity.BOTTOM) or
             (if (startSide) Gravity.START else Gravity.END)
         }

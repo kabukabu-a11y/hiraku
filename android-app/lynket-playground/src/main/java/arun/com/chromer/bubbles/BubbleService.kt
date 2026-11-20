@@ -224,6 +224,19 @@ class BubbleService : Service() {
       WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
       PixelFormat.TRANSLUCENT
     ).apply {
+      // v2.3.9 (item 97): glass bubbles. True refraction of
+      // the app underneath is impossible (Android never hands
+      // another app's pixels to us), so the platform backdrop
+      // blur stands in for it, under the existing site-color
+      // glass tint — the same mechanism the overlay uses.
+      if (glassOn && Build.VERSION.SDK_INT >= 31) {
+        flags = flags or WindowManager.LayoutParams.FLAG_BLUR_BEHIND
+        blurBehindRadius = dp(
+          LinkPreferences.glassBlurRadiusDp(
+            LinkPreferences.getGlassStrength(this@BubbleService)
+          )
+        )
+      }
       gravity = Gravity.TOP or Gravity.START
       val remember = LinkPreferences.isBubbleRememberPos(this@BubbleService)
       x = if (remember && LinkPreferences.getBubbleSide(this@BubbleService) == 0) {
