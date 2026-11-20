@@ -29,7 +29,6 @@ import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.Box
@@ -58,12 +57,12 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.shadow
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
@@ -148,6 +147,21 @@ fun HirakuBottomBar(
   val scaleX = remember { Animatable(1f) }
   val scaleY = remember { Animatable(1f) }
   var dragging by remember { mutableStateOf(false) }
+
+  // v2.3.5 (item 80 — the actual root cause, verified with an
+  // external code review): the gesture handler below lives in
+  // pointerInput(Unit). With key Unit the pointer-input element
+  // is never restarted, so the handler keeps the lambda from the
+  // FIRST composition forever — and selectedIndex is a plain Int
+  // captured by value. It stayed at the tab the app started on
+  // (Home, 0), so after leaving Home once, every Home tap was
+  // judged "already selected" (0 != 0 is false) and discarded:
+  // the pill still reacted to presses and drags, but the screen
+  // never switched back, and only the start tab was affected.
+  // All values the handler reads now go through updated-state
+  // holders so it always sees the latest ones.
+  val latestSelectedIndex by rememberUpdatedState(selectedIndex)
+  val latestOnSelect by rememberUpdatedState(onSelect)
 
   fun valueSpec(): AnimationSpec<Float> = when (animLevel) {
     LinkPreferences.ANIM_OFF -> snap()
@@ -236,6 +250,10 @@ fun HirakuBottomBar(
       val itemWidth = maxWidth / HirakuTabLabels.size
       val density = LocalDensity.current
       val itemWidthPx = with(density) { itemWidth.toPx() }
+      // Same freeze problem as selectedIndex: the gesture
+      // handler must read the current width (rotations, multi-
+      // window), not the first composition's.
+      val latestItemWidthPx by rememberUpdatedState(itemWidthPx)
       // Glasmio geometry: 4dp content padding around the
       // indicator (GlasmioTabBarDefaults.ContentPadding).
       val pillWidth = itemWidth - 8.dp
@@ -247,11 +265,19 @@ fun HirakuBottomBar(
       // indicator's speed normalized so a fast cross-bar fling
       // (~2400 px/s) reaches the cap.
       val velocityPx = position.velocity * itemWidthPx
-      val vNorm = velocityPx / 8000f
+      // v2.3.5 (item 90): the squash terms are magnitude-only.
+      // With the old signed terms, moving LEFT made termY
+      // negative, so scaleY GREW (up to 1.06 * 1.2) instead of
+      // shrinking: the 56dp pill swelled to ~71dp inside the
+      // 64dp bar and its white edge poked out of the bar's top
+      // and bottom — the "white line" seen when pressing or
+      // travelling. The pill now stretches along X and thins
+      // along Y in both directions.
+      val vNorm = kotlin.math.abs(velocityPx) / 8000f
       val termX = (vNorm * 0.75f)
-        .coerceIn(-IosMotion.VELOCITY_SQUASH_CAP, IosMotion.VELOCITY_SQUASH_CAP)
+        .coerceAtMost(IosMotion.VELOCITY_SQUASH_CAP)
       val termY = (vNorm * 0.25f)
-        .coerceIn(-IosMotion.VELOCITY_SQUASH_CAP, IosMotion.VELOCITY_SQUASH_CAP)
+        .coerceAtMost(IosMotion.VELOCITY_SQUASH_CAP)
       val indicatorShape = RoundedCornerShape(50)
       Box(
         modifier = Modifier
@@ -269,22 +295,18 @@ fun HirakuBottomBar(
             if (glassOn) {
               Modifier
                 .background(
-                  // v2.3.3 (item 84): the fill is now nearly
-                  // flat. The old 0.17 -> 0.09 gradient's bright
-                  // band, compressed by the scaleY squash while
-                  // pressing/travelling, read as a white line
-                  // across the pressed item; a near-uniform fill
-                  // has no band to compress. The motion (springs
-                  // and squash amounts) is unchanged.
-                  Brush.verticalGradient(
-                    listOf(
-                      Color.White.copy(alpha = 0.13f),
-                      Color.White.copy(alpha = 0.11f)
-                    )
-                  ),
+                  // v2.3.5 (item 90): a single flat fill, and
+                  // the 1dp white border is gone. The border
+                  // double-composited with the fill into a
+                  // ~0.20-alpha white outline, and the press
+                  // scale made that outline swell and travel —
+                  // the other half of the "white line" seen on
+                  // press (the squash fix above is the rest).
+                  // v2.3.3's gradient flattening (item 84) was
+                  // not enough because the border remained.
+                  Color.White.copy(alpha = 0.12f),
                   indicatorShape
                 )
-                .border(1.dp, Color.White.copy(alpha = 0.10f), indicatorShape)
             } else {
               Modifier.background(
                 MaterialTheme.colorScheme.primary,
@@ -345,57 +367,78 @@ fun HirakuBottomBar(
           .fillMaxSize()
           .pointerInput(Unit) {
             awaitEachGesture {
-              val down = awaitFirstDown(requireUnconsumed = false)
-              val startX = down.position.x
-              var isDrag = false
-              var released = false
-              pressIn()
-              while (true) {
-                val event = awaitPointerEvent()
-                val change = event.changes.firstOrNull() ?: break
-                if (!change.pressed) {
-                  released = true
-                  break
-                }
-                change.consume()
-                if (!isDrag &&
-                  kotlin.math.abs(change.position.x - startX).toFloat() >
-                  viewConfiguration.touchSlop
-                ) {
-                  isDrag = true
-                  dragging = true
-                }
-                if (isDrag) {
-                  val target = (change.position.x / itemWidthPx - 0.5f)
-                    .coerceIn(0f, HirakuTabLabels.lastIndex.toFloat())
-                  // AwaitPointerEventScope is a restricted
-                  // suspension scope: Animatable calls must run in
-                  // a real coroutine, not in the gesture block.
-                  scope.launch {
-                    position.animateTo(target, valueSpec())
+              // v2.3.5: every value read here goes through the
+              // latest* holders (see the note at their
+              // declaration): this block is created once and
+              // never restarted, so direct reads of
+              // selectedIndex / onSelect / itemWidthPx would be
+              // frozen at the first composition — the item 80
+              // bug. The try/finally also guarantees the bar
+              // never stays stuck in the pressed/dragging state
+              // if the gesture coroutine is cancelled mid-press.
+              try {
+                val down = awaitFirstDown(requireUnconsumed = false)
+                val startX = down.position.x
+                var lastX = startX
+                var isDrag = false
+                var released = false
+                pressIn()
+                while (true) {
+                  val event = awaitPointerEvent()
+                  val change = event.changes.firstOrNull() ?: break
+                  if (!change.pressed) {
+                    released = true
+                    break
+                  }
+                  change.consume()
+                  lastX = change.position.x
+                  if (!isDrag &&
+                    kotlin.math.abs(change.position.x - startX).toFloat() >
+                    viewConfiguration.touchSlop
+                  ) {
+                    isDrag = true
+                    dragging = true
+                  }
+                  if (isDrag) {
+                    val target = (change.position.x / latestItemWidthPx - 0.5f)
+                      .coerceIn(0f, HirakuTabLabels.lastIndex.toFloat())
+                    // AwaitPointerEventScope is a restricted
+                    // suspension scope: Animatable calls must run in
+                    // a real coroutine, not in the gesture block.
+                    scope.launch {
+                      position.animateTo(target, valueSpec())
+                    }
                   }
                 }
-              }
-              pressOut()
-              if (!released) {
-                // Gesture cancelled: settle back.
-                dragging = false
-                settleTo(selectedIndex)
-              } else if (!isDrag) {
-                val index = (startX / itemWidthPx).toInt()
-                  .coerceIn(0, HirakuTabLabels.lastIndex)
-                if (index != selectedIndex) {
-                  onSelect(index)
-                }
-              } else {
-                val target = position.value.roundToInt()
-                  .coerceIn(0, HirakuTabLabels.lastIndex)
-                dragging = false
-                if (target != selectedIndex) {
-                  onSelect(target)
+                pressOut()
+                if (!released) {
+                  // Gesture cancelled: settle back.
+                  dragging = false
+                  settleTo(latestSelectedIndex)
+                } else if (!isDrag) {
+                  val index = (startX / latestItemWidthPx).toInt()
+                    .coerceIn(0, HirakuTabLabels.lastIndex)
+                  if (index != latestSelectedIndex) {
+                    latestOnSelect(index)
+                  }
                 } else {
-                  settleTo(selectedIndex)
+                  // Judge the drop by where the FINGER is, not
+                  // by the still-travelling pill position: a
+                  // fast swipe used to snap back because the
+                  // spring had not carried the pill past the
+                  // halfway point yet.
+                  val target = (lastX / latestItemWidthPx - 0.5f).roundToInt()
+                    .coerceIn(0, HirakuTabLabels.lastIndex)
+                  dragging = false
+                  if (target != latestSelectedIndex) {
+                    latestOnSelect(target)
+                  } else {
+                    settleTo(latestSelectedIndex)
+                  }
                 }
+              } finally {
+                dragging = false
+                pressOut()
               }
             }
           }

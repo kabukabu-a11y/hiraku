@@ -108,6 +108,10 @@ class OverlayService : Service() {
   private var faviconView: ImageView? = null
   private var barTopRow: View? = null
   private var barView: View? = null
+  // The bar's corner buttons, kept as fields so the bar-corner
+  // resize grips can forward taps to them (item 91).
+  private var barCloseButton: View? = null
+  private var barMenuButton: View? = null
   private var menuView: View? = null
   private var menuParams: WindowManager.LayoutParams? = null
   private var menuContent: LinearLayout? = null
@@ -663,35 +667,26 @@ class OverlayService : Service() {
       var startH = 0
       var startRawX = 0f
       var startRawY = 0f
+      var gripDragging = false
       gripView.setOnTouchListener { v, event ->
         val wm = windowManager ?: return@setOnTouchListener false
         val r = rootView ?: return@setOnTouchListener false
         val p = layoutParams ?: return@setOnTouchListener false
         when (event.actionMasked) {
           MotionEvent.ACTION_DOWN -> {
-            // v2.3.4 (item 89): the grip view overlaps the bar's
-            // corner cells (close at START, menu at END). Only a
-            // touch starting in the outermost 14dp corner sliver
-            // belongs to the grip; anything else returns false so
-            // the tap falls through to the button underneath. In
-            // v2.3.3 the whole 32dp grip consumed touches, and on
-            // phone-size windows it covered most of the corner
-            // buttons' targets — the menu button never responded
-            // at all (tablet-size windows were wide enough that
-            // the button glyphs sat clear of the grip).
-            val sliver = dp(14).toFloat()
-            val nearX = if (startSide) {
-              event.x < sliver
-            } else {
-              event.x > v.width - sliver
-            }
-            val nearY = if (barOnTop) {
-              event.y < sliver
-            } else {
-              event.y > v.height - sliver
-            }
-            if (!nearX || !nearY) return@setOnTouchListener false
-            setBlurPaused(true)
+            // v2.3.5 (items 89/91): the grip overlaps the bar's
+            // corner button (close at START, menu at END), and
+            // the two need opposite treatment of the same touch.
+            // v2.3.3 let the whole 32dp grip consume, which
+            // killed the buttons at phone sizes; v2.3.4's fix —
+            // only an outermost-14dp corner sliver counts as a
+            // grip touch — made the grip itself nearly
+            // ungrabbable, so resizing died instead (a rejected
+            // DOWN loses the whole gesture). Now the grip takes
+            // every DOWN and decides by movement: a drag past
+            // the slop becomes a resize; a tap (up within the
+            // slop) is forwarded to the button underneath.
+            gripDragging = false
             startX = p.x
             startY = p.y
             startW = p.width
@@ -702,6 +697,18 @@ class OverlayService : Service() {
           }
 
           MotionEvent.ACTION_MOVE -> {
+            if (!gripDragging) {
+              val moved = maxOf(
+                kotlin.math.abs(event.rawX - startRawX),
+                kotlin.math.abs(event.rawY - startRawY)
+              )
+              if (moved < dp(9)) {
+                // Not a drag yet — could still become a tap.
+                return@setOnTouchListener true
+              }
+              gripDragging = true
+              setBlurPaused(true)
+            }
             if (isMinimized) {
               isMinimized = false
               webView?.visibility = View.VISIBLE
@@ -744,8 +751,19 @@ class OverlayService : Service() {
           }
 
           MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
-            setBlurPaused(false)
-            saveGeometry()
+            if (gripDragging) {
+              setBlurPaused(false)
+              saveGeometry()
+            } else if (event.actionMasked == MotionEvent.ACTION_UP) {
+              // A tap that started on the grip belongs to the
+              // bar's corner button underneath it (item 91).
+              if (startSide) {
+                barCloseButton?.performClick()
+              } else {
+                barMenuButton?.performClick()
+              }
+            }
+            gripDragging = false
             v.performClick()
             true
           }
@@ -1509,6 +1527,7 @@ class OverlayService : Service() {
       contentDescription = getString(R.string.act_close)
       setOnClickListener { closeOverlay() }
     }
+    barCloseButton = close
     val toBubble = createBarIconButton(R.drawable.ic_ov_minimize).apply {
       contentDescription = getString(R.string.overlay_to_bubble)
       setOnClickListener { convertToBubble() }
@@ -1582,6 +1601,7 @@ class OverlayService : Service() {
         }
       }
     }
+    barMenuButton = menu
 
     iconRow.addView(close)
     iconRow.addView(toBubble)
