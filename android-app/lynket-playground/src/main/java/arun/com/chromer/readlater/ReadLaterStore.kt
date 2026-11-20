@@ -111,4 +111,9 @@ object ReadLaterStore {
   fun clear(context: Context) {
     prefs(context).edit().remove(KEY_ENTRIES).apply()
   }
+
+  /** Replaces the whole list (backup restore, v2.3.0). */
+  fun replaceAll(context: Context, entries: List<ReadLaterEntry>) {
+    save(context, entries.take(MAX_ENTRIES))
+  }
 }

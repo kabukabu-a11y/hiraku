@@ -54,7 +54,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
@@ -69,13 +68,18 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import arun.com.chromer.apps.AppRulesActivity
+import arun.com.chromer.apps.ChooserItemsActivity
 import arun.com.chromer.apps.SiteRulesActivity
+import arun.com.chromer.customtab.CustomTabProviders
 import arun.com.chromer.customtab.LinkPreferences
 import arun.com.chromer.history.HistoryStore
 import arun.com.chromer.tabs.TabStore
 import arun.com.chromer.theme.LynketTheme
+import arun.com.chromer.ui.GlassOption
+import arun.com.chromer.ui.GlassSelectPopup
+import arun.com.chromer.ui.GlassSelectRow
 import arun.com.chromer.ui.HirakuBottomBar
-import arun.com.chromer.ui.SegmentedControl
+import arun.com.chromer.ui.HirakuToggle
 import arun.com.chromer.ui.openHomeTab
 
 /**
@@ -109,8 +113,10 @@ fun SettingsScreen(
   var adBlock by remember { mutableStateOf(LinkPreferences.isAdBlockEnabled(context)) }
   var preview by remember { mutableStateOf(LinkPreferences.isPreviewEnabled(context)) }
   var language by remember { mutableStateOf(LinkPreferences.getLanguage(context)) }
-  var chooserOrder by remember { mutableStateOf(LinkPreferences.getChooserOrder(context)) }
-  var hiddenMethods by remember { mutableStateOf(LinkPreferences.getHiddenMethods(context)) }
+  var glassEnabled by remember { mutableStateOf(LinkPreferences.isGlassEnabled(context)) }
+  var dynamicColor by remember { mutableStateOf(LinkPreferences.isDynamicColor(context)) }
+  var downloadApp by remember { mutableStateOf(LinkPreferences.getDownloadApp(context)) }
+  var selectPopup by remember { mutableStateOf<String?>(null) }
   var securityCheck by remember { mutableStateOf(LinkPreferences.isSecurityCheckEnabled(context)) }
   var secretGlobal by remember { mutableStateOf(LinkPreferences.isSecretGlobal(context)) }
   var bubbleRemember by remember { mutableStateOf(LinkPreferences.isBubbleRememberPos(context)) }
@@ -128,7 +134,7 @@ fun SettingsScreen(
     if (uri != null) {
       try {
         context.contentResolver.openOutputStream(uri)?.use { out ->
-          out.write(LinkPreferences.exportSettings(context).toByteArray())
+          out.write(LinkPreferences.exportAll(context).toByteArray())
         }
       } catch (_: Exception) {
       }
@@ -142,7 +148,7 @@ fun SettingsScreen(
         val text = context.contentResolver.openInputStream(uri)
           ?.bufferedReader()
           ?.use { it.readText() }
-        text != null && LinkPreferences.importSettings(context, text)
+        text != null && LinkPreferences.importAll(context, text)
       } catch (_: Exception) {
         false
       }
@@ -195,45 +201,24 @@ fun SettingsScreen(
       verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
       SettingsCard(title = stringResource(R.string.settings_display)) {
-        Text(
-          text = stringResource(R.string.settings_bar_position),
-          style = MaterialTheme.typography.bodyLarge
-        )
-        Spacer(modifier = Modifier.height(8.dp))
-        SegmentedControl(
-          options = listOf(
-            stringResource(R.string.settings_bar_bottom),
-            stringResource(R.string.settings_bar_top)
+        GlassSelectRow(
+          label = stringResource(R.string.settings_bar_position),
+          value = stringResource(
+            if (barOnTop) R.string.settings_bar_top else R.string.settings_bar_bottom
           ),
-          selectedIndex = if (barOnTop) 1 else 0,
-          onSelect = { index ->
-            val onTop = index == 1
-            LinkPreferences.setBarOnTop(context, onTop)
-            barOnTop = onTop
-          }
+          onClick = { selectPopup = "bar" }
         )
-        Spacer(modifier = Modifier.height(8.dp))
-        Text(
-          text = stringResource(R.string.settings_animation),
-          style = MaterialTheme.typography.bodyLarge
-        )
-        Text(
-          text = stringResource(R.string.settings_animation_desc),
-          style = MaterialTheme.typography.bodySmall,
-          color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-        Spacer(modifier = Modifier.height(8.dp))
-        SegmentedControl(
-          options = listOf(
-            stringResource(R.string.anim_off),
-            stringResource(R.string.anim_weak),
-            stringResource(R.string.anim_strong)
+        GlassSelectRow(
+          label = stringResource(R.string.settings_animation),
+          description = stringResource(R.string.settings_animation_desc),
+          value = stringResource(
+            when (animLevel) {
+              LinkPreferences.ANIM_OFF -> R.string.anim_off
+              LinkPreferences.ANIM_WEAK -> R.string.anim_weak
+              else -> R.string.anim_strong
+            }
           ),
-          selectedIndex = animLevel,
-          onSelect = { index ->
-            LinkPreferences.setAnimLevel(context, index)
-            animLevel = index
-          }
+          onClick = { selectPopup = "anim" }
         )
         SwitchRow(
           title = stringResource(R.string.settings_blur),
@@ -264,6 +249,29 @@ fun SettingsScreen(
         )
       }
 
+      SettingsCard(title = stringResource(R.string.settings_appearance)) {
+        SwitchRow(
+          title = stringResource(R.string.settings_dynamic_color),
+          description = stringResource(R.string.settings_dynamic_color_desc),
+          checked = dynamicColor,
+          onCheckedChange = {
+            LinkPreferences.setDynamicColor(context, it)
+            dynamicColor = it
+            (context as? Activity)?.recreate()
+          }
+        )
+        SwitchRow(
+          title = stringResource(R.string.settings_glass),
+          description = stringResource(R.string.settings_glass_desc),
+          checked = glassEnabled,
+          onCheckedChange = {
+            LinkPreferences.setGlassEnabled(context, it)
+            glassEnabled = it
+            (context as? Activity)?.recreate()
+          }
+        )
+      }
+
       SettingsCard(title = stringResource(R.string.settings_browsing)) {
         SwitchRow(
           title = stringResource(R.string.adblock_title),
@@ -283,24 +291,11 @@ fun SettingsScreen(
             preview = it
           }
         )
-        Text(
-          text = stringResource(R.string.text_size),
-          style = MaterialTheme.typography.bodyLarge
-        )
-        Text(
-          text = stringResource(R.string.settings_text_size_desc),
-          style = MaterialTheme.typography.bodySmall,
-          color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-        Spacer(modifier = Modifier.height(8.dp))
-        val zoomOptions = listOf(75, 100, 125, 150)
-        SegmentedControl(
-          options = zoomOptions.map { "$it%" },
-          selectedIndex = zoomOptions.indexOf(textZoom).coerceAtLeast(0),
-          onSelect = { index ->
-            LinkPreferences.setTextZoom(context, zoomOptions[index])
-            textZoom = zoomOptions[index]
-          }
+        GlassSelectRow(
+          label = stringResource(R.string.text_size),
+          description = stringResource(R.string.settings_text_size_desc),
+          value = "$textZoom%",
+          onClick = { selectPopup = "zoom" }
         )
         SwitchRow(
           title = stringResource(R.string.settings_desktop_default),
@@ -390,17 +385,8 @@ fun SettingsScreen(
           Text(stringResource(R.string.secret_apps_title))
         }
         Spacer(modifier = Modifier.height(8.dp))
-        OutlinedButton(
-          onClick = {
-            context.startActivity(
-              AppRulesActivity.createIntent(context, AppRulesActivity.MODE_SHARE)
-            )
-          }
-        ) {
-          Text(stringResource(R.string.settings_share_targets))
-        }
         Text(
-          text = stringResource(R.string.settings_share_targets_desc),
+          text = stringResource(R.string.secret_note),
           style = MaterialTheme.typography.bodySmall,
           color = MaterialTheme.colorScheme.onSurfaceVariant
         )
@@ -413,70 +399,25 @@ fun SettingsScreen(
           color = MaterialTheme.colorScheme.onSurfaceVariant
         )
         Spacer(modifier = Modifier.height(8.dp))
-        chooserOrder.forEachIndexed { index, method ->
-          Row(
-            verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier.fillMaxWidth()
-          ) {
-            Text(
-              text = stringResource(method.labelRes),
-              modifier = Modifier.weight(1f),
-              style = MaterialTheme.typography.bodyMedium
-            )
-            IconButton(
-              enabled = index > 0,
-              onClick = {
-                val newOrder = chooserOrder.toMutableList()
-                val tmp = newOrder[index - 1]
-                newOrder[index - 1] = newOrder[index]
-                newOrder[index] = tmp
-                LinkPreferences.setChooserOrder(context, newOrder)
-                chooserOrder = newOrder
-              }
-            ) {
-              Text("↑")
-            }
-            IconButton(
-              enabled = index < chooserOrder.lastIndex,
-              onClick = {
-                val newOrder = chooserOrder.toMutableList()
-                val tmp = newOrder[index + 1]
-                newOrder[index + 1] = newOrder[index]
-                newOrder[index] = tmp
-                LinkPreferences.setChooserOrder(context, newOrder)
-                chooserOrder = newOrder
-              }
-            ) {
-              Text("↓")
-            }
-            Switch(
-              checked = method !in hiddenMethods,
-              onCheckedChange = { visible ->
-                LinkPreferences.setMethodHidden(context, method, !visible)
-                hiddenMethods = LinkPreferences.getHiddenMethods(context)
-              }
-            )
+        OutlinedButton(
+          onClick = {
+            context.startActivity(Intent(context, ChooserItemsActivity::class.java))
           }
+        ) {
+          Text(stringResource(R.string.chooser_items_title))
         }
       }
 
       SettingsCard(title = stringResource(R.string.settings_language)) {
-        val options = listOf(
-          "system" to stringResource(R.string.lang_system),
-          "ja" to stringResource(R.string.lang_ja),
-          "en" to "English"
+        GlassSelectRow(
+          label = stringResource(R.string.settings_language),
+          value = when (language) {
+            "ja" -> stringResource(R.string.lang_ja)
+            "en" -> "English"
+            else -> stringResource(R.string.lang_system)
+          },
+          onClick = { selectPopup = "lang" }
         )
-        for ((value, label) in options) {
-          RadioRow(
-            label = label,
-            selected = language == value,
-            onSelect = {
-              LinkPreferences.setLanguage(context, value)
-              language = value
-              applyLanguage(context, value)
-            }
-          )
-        }
         Text(
           text = stringResource(R.string.settings_language_desc),
           style = MaterialTheme.typography.bodySmall,
@@ -514,6 +455,18 @@ fun SettingsScreen(
         }
       }
 
+      SettingsCard(title = stringResource(R.string.settings_download)) {
+        val downloadProviders = remember { CustomTabProviders.findProviders(context) }
+        GlassSelectRow(
+          label = stringResource(R.string.settings_download_app),
+          description = stringResource(R.string.settings_download_app_desc),
+          value = downloadApp?.let { pkg ->
+            downloadProviders.firstOrNull { it.packageName == pkg }?.label ?: pkg
+          } ?: stringResource(R.string.download_app_system),
+          onClick = { selectPopup = "download" }
+        )
+      }
+
       SettingsCard(title = stringResource(R.string.settings_data)) {
         OutlinedButton(
           onClick = {
@@ -530,7 +483,7 @@ fun SettingsScreen(
           style = MaterialTheme.typography.bodyLarge
         )
         Text(
-          text = stringResource(R.string.settings_backup_desc),
+          text = stringResource(R.string.settings_backup_desc_v2),
           style = MaterialTheme.typography.bodySmall,
           color = MaterialTheme.colorScheme.onSurfaceVariant
         )
@@ -556,6 +509,89 @@ fun SettingsScreen(
       // Clearance so the last card is never hidden behind the
       // floating bottom bar (v2.3.0).
       Spacer(modifier = Modifier.height(84.dp))
+    }
+
+    // v2.3.0: glass selection popups (replacing segmented controls).
+    when (selectPopup) {
+      "bar" -> GlassSelectPopup(
+        options = listOf(
+          GlassOption(label = stringResource(R.string.settings_bar_bottom)),
+          GlassOption(label = stringResource(R.string.settings_bar_top))
+        ),
+        selectedIndex = if (barOnTop) 1 else 0,
+        onSelect = { index ->
+          val onTop = index == 1
+          LinkPreferences.setBarOnTop(context, onTop)
+          barOnTop = onTop
+          selectPopup = null
+        },
+        onDismiss = { selectPopup = null }
+      )
+      "anim" -> GlassSelectPopup(
+        options = listOf(
+          GlassOption(label = stringResource(R.string.anim_off)),
+          GlassOption(label = stringResource(R.string.anim_weak)),
+          GlassOption(label = stringResource(R.string.anim_strong))
+        ),
+        selectedIndex = animLevel,
+        onSelect = { index ->
+          LinkPreferences.setAnimLevel(context, index)
+          animLevel = index
+          selectPopup = null
+        },
+        onDismiss = { selectPopup = null }
+      )
+      "zoom" -> GlassSelectPopup(
+        options = listOf(75, 100, 125, 150).map { GlassOption(label = "$it%") },
+        selectedIndex = listOf(75, 100, 125, 150).indexOf(textZoom).coerceAtLeast(0),
+        onSelect = { index ->
+          val zoom = listOf(75, 100, 125, 150)[index]
+          LinkPreferences.setTextZoom(context, zoom)
+          textZoom = zoom
+          selectPopup = null
+        },
+        onDismiss = { selectPopup = null }
+      )
+      "lang" -> GlassSelectPopup(
+        options = listOf(
+          GlassOption(label = stringResource(R.string.lang_system)),
+          GlassOption(label = stringResource(R.string.lang_ja)),
+          GlassOption(label = "English")
+        ),
+        selectedIndex = when (language) {
+          "ja" -> 1
+          "en" -> 2
+          else -> 0
+        },
+        onSelect = { index ->
+          val value = listOf("system", "ja", "en")[index]
+          LinkPreferences.setLanguage(context, value)
+          language = value
+          applyLanguage(context, value)
+          selectPopup = null
+        },
+        onDismiss = { selectPopup = null }
+      )
+      "download" -> {
+        val providers = CustomTabProviders.findProviders(context)
+        GlassSelectPopup(
+          options = listOf(
+            GlassOption(label = stringResource(R.string.download_app_system))
+          ) + providers.map { GlassOption(label = it.label) },
+          selectedIndex = if (downloadApp == null) {
+            0
+          } else {
+            providers.indexOfFirst { it.packageName == downloadApp } + 1
+          },
+          onSelect = { index ->
+            val pkg = if (index == 0) null else providers.getOrNull(index - 1)?.packageName
+            LinkPreferences.setDownloadApp(context, pkg)
+            downloadApp = pkg
+            selectPopup = null
+          },
+          onDismiss = { selectPopup = null }
+        )
+      }
     }
   }
 }
@@ -613,7 +649,7 @@ private fun SwitchRow(
         color = MaterialTheme.colorScheme.onSurfaceVariant
       )
     }
-    Switch(checked = checked, onCheckedChange = onCheckedChange)
+    HirakuToggle(checked = checked, onCheckedChange = onCheckedChange)
   }
 }
 

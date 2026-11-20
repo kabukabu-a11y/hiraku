@@ -260,6 +260,7 @@
     <string name="chooser_items_add_desc">Apps that can receive links can be picked directly as an open method</string>
     <string name="settings_backup_desc_v2">Save or load your settings, per-app and per-site rules, history and read-later pages in one file</string>
     <string name="download_started">Download started</string>
+    <string name="download_app_system">System default</string>
     <string name="overlay_bookmark">Bookmark</string>
     <string name="overlay_history">History</string>
     <string name="overlay_share_row">Share</string>

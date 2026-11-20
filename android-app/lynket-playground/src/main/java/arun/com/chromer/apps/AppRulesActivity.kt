@@ -114,7 +114,6 @@ class AppRulesActivity : ComponentActivity() {
     const val EXTRA_MODE = "arun.com.chromer.apps.EXTRA_MODE"
     const val MODE_RULES = "rules"
     const val MODE_SECRET = "secret"
-    const val MODE_SHARE = "share"
 
     fun createIntent(context: android.content.Context, mode: String): Intent {
       return Intent(context, AppRulesActivity::class.java).apply {
@@ -136,7 +135,6 @@ private fun AppRulesScreen(mode: String, onBack: () -> Unit) {
             stringResource(
               when (mode) {
                 AppRulesActivity.MODE_SECRET -> R.string.secret_apps_title
-                AppRulesActivity.MODE_SHARE -> R.string.share_targets_title
                 else -> R.string.app_rules_title
               }
             )
@@ -191,7 +189,6 @@ fun AppRulesBody(mode: String) {
   val defaultMethod = remember { LinkPreferences.getDefaultMethod(context) }
   var rules by remember { mutableStateOf(LinkPreferences.getAppRules(context)) }
   var secretApps by remember { mutableStateOf(LinkPreferences.getSecretApps(context)) }
-  var shareTargets by remember { mutableStateOf(LinkPreferences.getShareTargets(context)) }
   var query by remember { mutableStateOf("") }
   var editingApp by remember { mutableStateOf<InstalledApp?>(null) }
 
@@ -222,9 +219,6 @@ fun AppRulesBody(mode: String) {
       text = when (mode) {
         AppRulesActivity.MODE_SECRET -> stringResource(R.string.secret_apps_desc) +
           "\n" + stringResource(R.string.secret_note)
-        AppRulesActivity.MODE_SHARE -> stringResource(
-          R.string.settings_share_targets_desc
-        )
         else -> stringResource(
           R.string.app_rules_default_note,
           defaultMethod.displayLabel(context)
@@ -251,7 +245,6 @@ fun AppRulesBody(mode: String) {
       items(filtered, key = { it.packageName }) { app ->
         val rule = rules[app.packageName]
         val isSecret = app.packageName in secretApps
-        val isShareTarget = app.packageName in shareTargets
         Row(
           modifier = Modifier
             .fillMaxWidth()
@@ -261,23 +254,6 @@ fun AppRulesBody(mode: String) {
                   val newValue = !isSecret
                   LinkPreferences.setAppSecret(context, app.packageName, newValue)
                   secretApps = LinkPreferences.getSecretApps(context)
-                }
-                AppRulesActivity.MODE_SHARE -> {
-                  if (isShareTarget) {
-                    val updated = shareTargets - app.packageName
-                    LinkPreferences.setShareTargets(context, updated)
-                    shareTargets = updated
-                  } else if (shareTargets.size >= LinkPreferences.MAX_SHARE_TARGETS) {
-                    Toast.makeText(
-                      context,
-                      context.getString(R.string.share_max),
-                      Toast.LENGTH_SHORT
-                    ).show()
-                  } else {
-                    val updated = shareTargets + app.packageName
-                    LinkPreferences.setShareTargets(context, updated)
-                    shareTargets = updated
-                  }
                 }
                 else -> editingApp = app
               }
@@ -320,22 +296,14 @@ fun AppRulesBody(mode: String) {
               }
             }
           }
-          when (mode) {
-            AppRulesActivity.MODE_SECRET -> {
-              HirakuToggle(
-                checked = isSecret,
-                onCheckedChange = { newValue ->
-                  LinkPreferences.setAppSecret(context, app.packageName, newValue)
-                  secretApps = LinkPreferences.getSecretApps(context)
-                }
-              )
-            }
-            AppRulesActivity.MODE_SHARE -> {
-              Checkbox(
-                checked = isShareTarget,
-                onCheckedChange = null
-              )
-            }
+          if (mode == AppRulesActivity.MODE_SECRET) {
+            HirakuToggle(
+              checked = isSecret,
+              onCheckedChange = { newValue ->
+                LinkPreferences.setAppSecret(context, app.packageName, newValue)
+                secretApps = LinkPreferences.getSecretApps(context)
+              }
+            )
           }
         }
       }

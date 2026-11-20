@@ -28,7 +28,6 @@ import arun.com.chromer.R
 import arun.com.chromer.browser.BrowserActivity
 import arun.com.chromer.bubbles.BubbleService
 import arun.com.chromer.overlay.OverlayService
-import arun.com.chromer.share.SharePickerActivity
 
 /**
  * Executes an [OpenMethod] for a URL. Browser-based methods need an
@@ -159,18 +158,9 @@ object LinkDispatcher {
   }
 
   fun share(context: Context, url: String) {
-    // With quick share targets configured, show Hiraku's own sheet
-    // with those apps first (v2.1.0); otherwise the system chooser.
-    if (LinkPreferences.getShareTargets(context).isNotEmpty()) {
-      try {
-        context.startActivity(
-          SharePickerActivity.createIntent(context, url)
-            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        )
-        return
-      } catch (_: Exception) {
-      }
-    }
+    // v2.3.0: quick share is gone — share-target apps are picked
+    // directly in the chooser sheet instead. Sharing from inside a
+    // page always uses the system chooser.
     shareSystem(context, url)
   }
 

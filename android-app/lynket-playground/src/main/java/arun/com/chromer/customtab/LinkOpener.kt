@@ -31,8 +31,13 @@ import androidx.annotation.StringRes
 import androidx.browser.customtabs.CustomTabsClient
 import androidx.browser.customtabs.CustomTabsIntent
 import arun.com.chromer.R
+import arun.com.chromer.history.HistoryEntry
+import arun.com.chromer.history.HistoryStore
 import arun.com.chromer.home.HomeActivity
 import arun.com.chromer.link.LinkHandlerActivity
+import arun.com.chromer.readlater.ReadLaterEntry
+import arun.com.chromer.readlater.ReadLaterStore
+import org.json.JSONArray
 import org.json.JSONObject
 
 /**
@@ -919,6 +924,92 @@ object LinkPreferences {
     } catch (_: Exception) {
       false
     }
+  }
+
+  /**
+   * Full backup (v2.3.0): every setting and rule (the v1 settings
+   * document), the browsing history and the read-later list in one
+   * JSON file.
+   */
+  fun exportAll(context: Context): String {
+    val root = JSONObject()
+    root.put("app", "hiraku-backup")
+    root.put("version", 2)
+    root.put("settings", JSONObject(exportSettings(context)))
+    val history = JSONArray()
+    for (entry in HistoryStore.getAll(context)) {
+      history.put(
+        JSONObject()
+          .put("url", entry.url)
+          .put("title", entry.title)
+          .put("visitedAt", entry.visitedAt)
+      )
+    }
+    root.put("history", history)
+    val readLater = JSONArray()
+    for (entry in ReadLaterStore.getAll(context)) {
+      readLater.put(
+        JSONObject()
+          .put("url", entry.url)
+          .put("title", entry.title)
+          .put("savedAt", entry.savedAt)
+      )
+    }
+    root.put("read_later", readLater)
+    return root.toString(2)
+  }
+
+  /**
+   * Restores a document produced by [exportAll]. Plain v1 settings
+   * files are accepted too and restore settings only.
+   */
+  fun importAll(context: Context, json: String): Boolean {
+    val root = try {
+      JSONObject(json)
+    } catch (_: Exception) {
+      return false
+    }
+    if (root.optString("app") == "hiraku-settings") {
+      return importSettings(context, json)
+    }
+    if (root.optString("app") != "hiraku-backup") return false
+    val settings = root.optJSONObject("settings") ?: return false
+    if (!importSettings(context, settings.toString())) return false
+    val historyArray = root.optJSONArray("history")
+    if (historyArray != null) {
+      val entries = ArrayList<HistoryEntry>()
+      for (i in 0 until historyArray.length()) {
+        val obj = historyArray.optJSONObject(i) ?: continue
+        val entryUrl = obj.optString("url")
+        if (entryUrl.isBlank()) continue
+        entries.add(
+          HistoryEntry(
+            url = entryUrl,
+            title = obj.optString("title", ""),
+            visitedAt = obj.optLong("visitedAt")
+          )
+        )
+      }
+      HistoryStore.replaceAll(context, entries)
+    }
+    val readArray = root.optJSONArray("read_later")
+    if (readArray != null) {
+      val entries = ArrayList<ReadLaterEntry>()
+      for (i in 0 until readArray.length()) {
+        val obj = readArray.optJSONObject(i) ?: continue
+        val entryUrl = obj.optString("url")
+        if (entryUrl.isBlank()) continue
+        entries.add(
+          ReadLaterEntry(
+            url = entryUrl,
+            title = obj.optString("title", ""),
+            savedAt = obj.optLong("savedAt")
+          )
+        )
+      }
+      ReadLaterStore.replaceAll(context, entries)
+    }
+    return true
   }
 }
 

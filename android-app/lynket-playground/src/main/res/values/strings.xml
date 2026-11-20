@@ -280,6 +280,7 @@
     <string name="chooser_items_add_desc">リンクを受け取れるアプリを、開き方として直接選べるようにします</string>
     <string name="settings_backup_desc_v2">設定・アプリ別/サイト別ルール・履歴・あとで読むを、まとめてファイルに保存したり読み込んだりできます</string>
     <string name="download_started">ダウンロードを開始しました</string>
+    <string name="download_app_system">システム標準</string>
     <string name="overlay_bookmark">ブックマーク</string>
     <string name="overlay_history">履歴</string>
     <string name="overlay_share_row">共有</string>

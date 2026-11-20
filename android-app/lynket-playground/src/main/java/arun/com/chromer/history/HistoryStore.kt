@@ -113,5 +113,10 @@ object HistoryStore {
   fun clear(context: Context) {
     prefs(context).edit().remove(KEY_ENTRIES).apply()
   }
+
+  /** Replaces the whole history (backup restore, v2.3.0). */
+  fun replaceAll(context: Context, entries: List<HistoryEntry>) {
+    save(context, entries.take(MAX_ENTRIES))
+  }
 }
 
