@@ -75,10 +75,14 @@ kotlin {
   }
 }
 
-kapt {
+configure<org.jetbrains.kotlin.gradle.plugin.KaptExtension> {
   // Incremental annotation processing is a frequent source of
   // opaque worker failures after a Kotlin upgrade; the project is
-  // small enough not to need it.
+  // small enough not to need it. (Configured via configure<> rather
+  // than the kapt {} accessor: adding the accessor block made the
+  // Kotlin DSL re-resolve the android {} accessor to AGP's
+  // error-deprecated legacy variant and the script stopped
+  // compiling.)
   incrementalApt = false
 }
 
