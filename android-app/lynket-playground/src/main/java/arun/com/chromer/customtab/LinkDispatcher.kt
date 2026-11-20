@@ -21,8 +21,12 @@
 package arun.com.chromer.customtab
 
 import android.app.Activity
+import android.app.DownloadManager
 import android.content.Context
 import android.content.Intent
+import android.net.Uri
+import android.os.Environment
+import android.webkit.URLUtil
 import android.widget.Toast
 import arun.com.chromer.R
 import arun.com.chromer.browser.BrowserActivity
@@ -162,6 +166,59 @@ object LinkDispatcher {
     // directly in the chooser sheet instead. Sharing from inside a
     // page always uses the system chooser.
     shareSystem(context, url)
+  }
+
+  /**
+   * A download link was tapped (v2.3.0): hand it to the app chosen
+   * in Settings, or fall back to the system DownloadManager.
+   */
+  fun handleDownload(
+    context: Context,
+    url: String,
+    userAgent: String?,
+    contentDisposition: String?,
+    mimeType: String?
+  ) {
+    val downloadApp = LinkPreferences.getDownloadApp(context)
+    if (downloadApp != null) {
+      try {
+        context.startActivity(
+          Intent(Intent.ACTION_VIEW, Uri.parse(url))
+            .setPackage(downloadApp)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        )
+        Toast.makeText(
+          context,
+          context.getString(R.string.download_started),
+          Toast.LENGTH_SHORT
+        ).show()
+        return
+      } catch (_: Exception) {
+      }
+    }
+    try {
+      val manager = context.getSystemService(DownloadManager::class.java)
+      val request = DownloadManager.Request(Uri.parse(url))
+      request.setMimeType(mimeType)
+      if (!userAgent.isNullOrBlank()) {
+        request.addRequestHeader("User-Agent", userAgent)
+      }
+      val fileName = URLUtil.guessFileName(url, contentDisposition, mimeType)
+      request.setDestinationInExternalPublicDir(
+        Environment.DIRECTORY_DOWNLOADS,
+        fileName
+      )
+      request.setNotificationVisibility(
+        DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED
+      )
+      manager.enqueue(request)
+      Toast.makeText(
+        context,
+        context.getString(R.string.download_started),
+        Toast.LENGTH_SHORT
+      ).show()
+    } catch (_: Exception) {
+    }
   }
 
   /** The plain system share chooser. */

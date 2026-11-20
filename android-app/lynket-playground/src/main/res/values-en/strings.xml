@@ -4,6 +4,9 @@
     <!-- Common actions -->
     <string name="act_back">Back</string>
     <string name="act_close">Close</string>
+    <string name="act_reload">Reload</string>
+    <string name="act_menu">Menu</string>
+    <string name="overlay_expand">Toggle size</string>
     <string name="act_delete">Delete</string>
     <string name="act_share">Share</string>
     <string name="act_forward">Forward</string>

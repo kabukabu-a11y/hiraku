@@ -27,4 +27,10 @@
     <item name="android:windowEnterAnimation">@anim/overlay_enter</item>
     <item name="android:windowExitAnimation">@anim/overlay_exit</item>
   </style>
+
+  <!-- Window animations for the overlay menu panel (v2.3.0). -->
+  <style name="OverlayMenuAnim">
+    <item name="android:windowEnterAnimation">@anim/overlay_menu_in</item>
+    <item name="android:windowExitAnimation">@anim/overlay_menu_out</item>
+  </style>
 </resources>

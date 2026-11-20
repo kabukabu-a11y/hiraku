@@ -24,6 +24,9 @@
     <!-- Common actions -->
     <string name="act_back">戻る</string>
     <string name="act_close">閉じる</string>
+    <string name="act_reload">再読み込み</string>
+    <string name="act_menu">メニュー</string>
+    <string name="overlay_expand">大きさを切り替え</string>
     <string name="act_delete">削除</string>
     <string name="act_share">共有</string>
     <string name="act_forward">進む</string>

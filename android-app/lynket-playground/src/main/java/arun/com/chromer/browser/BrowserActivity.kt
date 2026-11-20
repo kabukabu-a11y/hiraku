@@ -711,6 +711,17 @@ class BrowserActivity : ComponentActivity() {
                   }
                 }
               }
+              setDownloadListener { downloadUrl, userAgent, contentDisposition, mimeType, _ ->
+                if (!downloadUrl.isNullOrBlank()) {
+                  arun.com.chromer.customtab.LinkDispatcher.handleDownload(
+                    context,
+                    downloadUrl,
+                    userAgent,
+                    contentDisposition,
+                    mimeType
+                  )
+                }
+              }
               setOnScrollChangeListener { _, _, scrollY, _, oldScrollY ->
                 if (hideBarEnabled) {
                   if (scrollY > oldScrollY + 6 && scrollY > 100) {
