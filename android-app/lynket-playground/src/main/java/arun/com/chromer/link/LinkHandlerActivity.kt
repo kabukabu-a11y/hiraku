@@ -27,7 +27,10 @@ import android.graphics.BitmapFactory
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.view.View
+import android.view.ViewTreeObserver
 import android.view.WindowManager
+import android.widget.FrameLayout
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.animation.AnimatedVisibility
@@ -74,6 +77,10 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.SideEffect
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInWindow
+import androidx.compose.ui.platform.ComposeView
 import arun.com.chromer.R
 import androidx.compose.ui.res.stringResource
 import androidx.compose.runtime.DisposableEffect
@@ -115,6 +122,7 @@ import arun.com.chromer.ui.GlassContentSecondary
 import arun.com.chromer.ui.glassBackground
 import arun.com.chromer.ui.IosMotion
 import arun.com.chromer.ui.rememberAppIcon
+import com.qmdeve.liquidglass.widget.LiquidGlassView
 import java.net.HttpURLConnection
 import java.net.URL
 import kotlin.math.roundToInt
@@ -133,6 +141,49 @@ import kotlinx.coroutines.withContext
  * secret mode (global or per source app) suppresses history records.
  */
 class LinkHandlerActivity : ComponentActivity() {
+
+  // v2.3.10 (item 101): real liquid glass for the chooser's
+  // finger-follow pill (layered setup in proceed()).
+  private var chooserGlassView: LiquidGlassView? = null
+  private var chooserRoot: FrameLayout? = null
+  private var chooserPreDraw: ViewTreeObserver.OnPreDrawListener? = null
+  private var chooserGlassRect: android.graphics.Rect? = null
+  private var chooserGlassActive = false
+
+  /**
+   * Positions the chooser's glass pill from the placeholder's
+   * last reported window rect; called on every pre-draw.
+   */
+  private fun syncChooserGlass() {
+    val glass = chooserGlassView ?: return
+    val root = chooserRoot ?: return
+    val rect = chooserGlassRect
+    if (!chooserGlassActive || rect == null) {
+      if (glass.visibility != View.GONE) glass.visibility = View.GONE
+      return
+    }
+    val rootLoc = IntArray(2)
+    root.getLocationInWindow(rootLoc)
+    val lp = glass.layoutParams as FrameLayout.LayoutParams
+    if (lp.width != rect.width() || lp.height != rect.height()) {
+      lp.width = rect.width()
+      lp.height = rect.height()
+      glass.layoutParams = lp
+    }
+    glass.translationX = (rect.left - rootLoc[0]).toFloat()
+    glass.translationY = (rect.top - rootLoc[1]).toFloat()
+    if (glass.visibility != View.VISIBLE) glass.visibility = View.VISIBLE
+  }
+
+  override fun onDestroy() {
+    val root = chooserRoot
+    val listener = chooserPreDraw
+    if (root != null && listener != null) {
+      root.viewTreeObserver.removeOnPreDrawListener(listener)
+    }
+    chooserPreDraw = null
+    super.onDestroy()
+  }
 
   override fun onCreate(savedInstanceState: Bundle?) {
     super.onCreate(savedInstanceState)
@@ -188,14 +239,62 @@ class LinkHandlerActivity : ComponentActivity() {
 
     if (method == OpenMethod.ASK && forced == null) {
       val referrerLabel = referrer?.let { appLabel(it) }
-      setContent {
-        LynketTheme {
-          ChooserScreen(
-            url = normalized,
-            referrerPackage = referrer,
-            referrerLabel = referrerLabel,
-            secret = secret
-          )
+      if (Build.VERSION.SDK_INT >= 33 &&
+        LinkPreferences.isGlassEnabled(this)
+      ) {
+        // Item 101 layered setup: a real LiquidGlassView sits
+        // over the ComposeView and renders the follow pill's
+        // refraction (the library samples the ComposeView
+        // below it). The composition keeps a transparent
+        // placeholder pill that reports its window rect, and
+        // the glass is non-clickable so the rows underneath
+        // keep receiving the drag.
+        val root = FrameLayout(this)
+        val composeView = ComposeView(this)
+        val glass = LiquidGlassView(this).apply {
+          layoutParams = FrameLayout.LayoutParams(0, 0)
+          visibility = View.GONE
+          isClickable = false
+          isFocusable = false
+          setCornerRadius(16 * resources.displayMetrics.density)
+          setTintColorRed(1f)
+          setTintColorGreen(1f)
+          setTintColorBlue(1f)
+          setTintAlpha(0.13f)
+          setBlurRadius(24f)
+        }
+        root.addView(composeView)
+        root.addView(glass)
+        chooserGlassView = glass
+        chooserRoot = root
+        setContentView(root)
+        composeView.setContent {
+          LynketTheme {
+            ChooserScreen(
+              url = normalized,
+              referrerPackage = referrer,
+              referrerLabel = referrerLabel,
+              secret = secret
+            )
+          }
+        }
+        root.post { glass.bind(composeView) }
+        val listener = ViewTreeObserver.OnPreDrawListener {
+          syncChooserGlass()
+          true
+        }
+        chooserPreDraw = listener
+        root.viewTreeObserver.addOnPreDrawListener(listener)
+      } else {
+        setContent {
+          LynketTheme {
+            ChooserScreen(
+              url = normalized,
+              referrerPackage = referrer,
+              referrerLabel = referrerLabel,
+              secret = secret
+            )
+          }
         }
       }
       return
@@ -429,6 +528,11 @@ class LinkHandlerActivity : ComponentActivity() {
     val density = LocalDensity.current
     val rowHeightPx = with(density) { rowHeight.toPx() }
     var hoverIndex by remember { mutableStateOf<Int?>(null) }
+    // Item 101: with the layered glass in place, the pill
+    // below is a transparent placeholder that only reports
+    // its rect; the LiquidGlassView renders it.
+    val externalPill = remember { chooserGlassView != null }
+    SideEffect { chooserGlassActive = hoverIndex != null }
     // The follow pill has two edges (v2.3.1 item 68): a fast edge
     // and a slower edge, so it stretches a little while travelling
     // and settles back to exactly one row — an in-between liquid
@@ -712,10 +816,27 @@ class LinkHandlerActivity : ComponentActivity() {
                       .fillMaxWidth()
                       .height(rowHeight * (1f + pillSpan))
                       .padding(horizontal = 4.dp, vertical = 3.dp)
-                      .glassBackground(
-                        shape = RoundedCornerShape(16.dp),
-                        tint = Color.White.copy(alpha = 0.13f),
-                        strength = LinkPreferences.GLASS_STRONG
+                      .onGloballyPositioned { coords ->
+                        if (externalPill) {
+                          val pos = coords.positionInWindow()
+                          chooserGlassRect = android.graphics.Rect(
+                            pos.x.toInt(),
+                            pos.y.toInt(),
+                            pos.x.toInt() + coords.size.width,
+                            pos.y.toInt() + coords.size.height
+                          )
+                        }
+                      }
+                      .then(
+                        if (externalPill) {
+                          Modifier
+                        } else {
+                          Modifier.glassBackground(
+                            shape = RoundedCornerShape(16.dp),
+                            tint = Color.White.copy(alpha = 0.13f),
+                            strength = LinkPreferences.GLASS_STRONG
+                          )
+                        }
                       )
                   )
                 }

@@ -26,6 +26,13 @@ After installing, set Hiraku as your default browser so links from other apps ar
 - **URL security check (v2.1.0)**: warns before opening suspicious links (IP-address hosts, punycode domains, URLs with embedded user info). Can be turned off.
 - **And more**: article mode, tabs & history, desktop site toggle, a dedicated settings screen, and a Japanese / English UI (Settings → Language).
 
+## What's new in v2.3.10
+
+Includes everything from v2.3.9 below (its build failed on a one-line typo; fixed here), plus:
+
+- **Real liquid glass behind the overlay bar**: the overlay's bar now floats over the page (MeiloX / Apple style) instead of reserving space beside it, and a liquid-glass view behind it refracts the page itself. With the old layout there was no page behind the bar to refract.
+- **Real liquid glass for the chooser's follow pill**: the capsule that follows your finger across the browser choices now renders true refraction of the rows beneath it, using the same layered technique as the main screen.
+
 ## What's new in v2.3.9
 
 - **The liquid glass now follows the pill**: a second, pill-sized liquid-glass view is layered under the indicator and slides with its spring, so the refraction travels with the pill instead of staying fixed to the bar body. (Trial: tell us if the sync feels off.)
@@ -152,6 +159,13 @@ The ad-blocking list is built from the public [pgl.yoyo.org adservers](https://p
 - **共有先アプリを選択画面に（v2.3.0）**：クイック共有は廃止し、共有を受け付けるアプリが選択画面に「開き方」として直接並ぶようになりました（設定で追加・削除できます）
 - **URLセキュリティチェック（v2.1.0）**：IPアドレスへのリンク、国際化ドメイン（xn--）、ユーザー情報を含むURLなど、怪しいリンクを開く前に警告します（OFFにもできます）
 - **その他**：記事モード、タブと履歴、デスクトップサイト切替、細かい設定を集約した設定画面、日本語／英語の表示切替（設定 → 言語）
+
+## v2.3.10の新機能
+
+下のv2.3.9の内容をすべて含みます（v2.3.9は1行のタイプミスでビルドが失敗したため、ここで直しました）。追加分：
+
+- **オーバーレイのバーの裏に本物ガラス**：オーバーレイのバーが、横に場所を取る形から、ページの上に浮く形（MeiloX／Apple風）に変わりました。その裏に液体ガラスを敷き、ページ自体が屈折して見えます（旧レイアウトではバーの裏にページが無く、屈折させるものがありませんでした）
+- **選択シートの追従ピルにも本物ガラス**：ブラウザの選択肢をなぞると付いてくるカプセルが、下の行を本当に屈折させるようになりました。メイン画面と同じ重ね方を使っています
 
 ## v2.3.9の新機能
 

@@ -81,6 +81,7 @@ import arun.com.chromer.history.HistoryActivity
 import arun.com.chromer.readlater.ReadLaterStore
 import arun.com.chromer.settings.SettingsActivity
 import arun.com.chromer.ui.glassViewColor
+import com.qmdeve.liquidglass.widget.LiquidGlassView
 import arun.com.chromer.ui.IosSpringInterpolator
 import kotlin.math.hypot
 import java.util.concurrent.atomic.AtomicInteger
@@ -108,6 +109,9 @@ class OverlayService : Service() {
   private var faviconView: ImageView? = null
   private var barTopRow: View? = null
   private var barView: View? = null
+  // v2.3.10 (item 100): the bar's real liquid glass, when
+  // active (API 33+ and glass on).
+  private var barGlassView: LiquidGlassView? = null
   // The bar's corner buttons, kept as fields so the bar-corner
   // resize grips can forward taps to them (item 91).
   private var barCloseButton: View? = null
@@ -442,31 +446,83 @@ class OverlayService : Service() {
     }
 
     val barOnTop = LinkPreferences.isBarOnTop(this)
-    if (barOnTop) {
-      column.addView(bar)
-      column.addView(progress)
-      column.addView(wv)
-    } else {
-      column.addView(wv)
-      column.addView(progress)
-      column.addView(bar)
+    // v2.3.10 (item 100): the bar FLOATS over the page
+    // (MeiloX / Apple style) instead of reserving space in
+    // the column, so a real liquid-glass view can sit behind
+    // it and refract the page itself — with the old layout
+    // there was simply no page behind the bar to refract.
+    // The column now holds only the page; the progress line,
+    // the glass, the bar and the size band are root children
+    // layered over it.
+    column.addView(wv)
+    root.addView(column)
+    progress.layoutParams = FrameLayout.LayoutParams(
+      ViewGroup.LayoutParams.MATCH_PARENT,
+      ViewGroup.LayoutParams.WRAP_CONTENT
+    ).apply {
+      gravity = if (barOnTop) Gravity.TOP else Gravity.BOTTOM
+      if (barOnTop) {
+        topMargin = dp(BAR_TOP_ROW_DP + BAR_ICON_ROW_DP)
+      } else {
+        bottomMargin = dp(BAR_TOP_ROW_DP + BAR_ICON_ROW_DP + SIZE_BAND_DP)
+      }
     }
+    root.addView(progress)
+    // The bar's real glass (item 100): a LiquidGlassView
+    // sampling the WebView, which now extends underneath the
+    // bar. Same tint/blur recipe as the main bar's glass.
+    if (Build.VERSION.SDK_INT >= 33 &&
+      LinkPreferences.isGlassEnabled(this)
+    ) {
+      val gv = LiquidGlassView(this).apply {
+        layoutParams = FrameLayout.LayoutParams(
+          ViewGroup.LayoutParams.MATCH_PARENT,
+          dp(BAR_TOP_ROW_DP + BAR_ICON_ROW_DP)
+        ).apply {
+          gravity = if (barOnTop) Gravity.TOP else Gravity.BOTTOM
+          if (!barOnTop) bottomMargin = dp(SIZE_BAND_DP)
+        }
+        setCornerRadius(0f)
+        setTintColorRed(28f / 255f)
+        setTintColorGreen(28f / 255f)
+        setTintColorBlue(30f / 255f)
+        setTintAlpha(0.30f)
+        setBlurRadius(24f)
+        isClickable = false
+        isFocusable = false
+      }
+      root.addView(gv)
+      barGlassView = gv
+      bar.setBackgroundColor(Color.TRANSPARENT)
+      root.post { gv.bind(wv) }
+    }
+    bar.layoutParams = FrameLayout.LayoutParams(
+      ViewGroup.LayoutParams.MATCH_PARENT,
+      ViewGroup.LayoutParams.WRAP_CONTENT
+    ).apply {
+      gravity = if (barOnTop) Gravity.TOP else Gravity.BOTTOM
+      if (!barOnTop) bottomMargin = dp(SIZE_BAND_DP)
+    }
+    root.addView(bar)
     // v2.3.9 (item 99): a slim size-only handle band at the
     // window's bottom edge (OPPO floating-window style; the
-    // user chose a handle over a button bar). It is the
-    // column's last child, so it sits below the bar when the
-    // bar is at the bottom, and below the page when the bar
-    // is on top. Dragging it resizes — never moves — the
-    // window (listener attached below, with the other
-    // geometry gestures).
+    // user chose a handle over a button bar). Dragging it
+    // resizes — never moves — the window (listener attached
+    // below, with the other geometry gestures).
     val sizeBand = FrameLayout(this).apply {
-      layoutParams = LinearLayout.LayoutParams(
-        ViewGroup.LayoutParams.MATCH_PARENT, dp(18)
-      )
+      layoutParams = FrameLayout.LayoutParams(
+        ViewGroup.LayoutParams.MATCH_PARENT, dp(SIZE_BAND_DP)
+      ).apply {
+        gravity = Gravity.BOTTOM
+      }
       val bandPill = View(this@OverlayService).apply {
         background = GradientDrawable().apply {
           shape = GradientDrawable.RECTANGLE
-          cornerRadius = dp(2).toFloat()
+          // Method call, not the property: this function has
+          // a local `val cornerRadius` (the window frame's),
+          // which the property assignment would collide with
+          // (v2.3.9's build broke exactly here).
+          setCornerRadius(dp(2).toFloat())
           setColor(0x59FFFFFF)
         }
         layoutParams = FrameLayout.LayoutParams(dp(44), dp(4)).apply {
@@ -475,8 +531,7 @@ class OverlayService : Service() {
       }
       addView(bandPill)
     }
-    column.addView(sizeBand)
-    root.addView(column)
+    root.addView(sizeBand)
 
     // v2.3.7 (item 93): no resize grip on the edge opposite the
     // bar. Per the ColorOS model (item 86) the far edge is for
@@ -1276,12 +1331,12 @@ class OverlayService : Service() {
       if (wasApplied) {
         val opaque = (0xFF shl 24) or (glassBarColor() and 0xFFFFFF)
         (rootView?.background as? GradientDrawable)?.setColor(opaque)
-        barView?.setBackgroundColor(opaque)
+        if (barGlassView == null) barView?.setBackgroundColor(opaque)
       }
     } else {
       releaseBlurPause(reattach = false)
       (rootView?.background as? GradientDrawable)?.setColor(glassBarColor())
-      barView?.setBackgroundColor(glassBarColor())
+      if (barGlassView == null) barView?.setBackgroundColor(glassBarColor())
     }
   }
 
@@ -2584,6 +2639,7 @@ class OverlayService : Service() {
     // and the resize strips stop at their sum (item 76).
     private const val BAR_TOP_ROW_DP = 46
     private const val BAR_ICON_ROW_DP = 52
+    private const val SIZE_BAND_DP = 18
     private const val DESKTOP_UA =
       "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
 
