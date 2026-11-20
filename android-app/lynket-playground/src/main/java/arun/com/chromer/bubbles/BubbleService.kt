@@ -374,22 +374,11 @@ class BubbleService : Service() {
           }
           if (moved) {
             showTrash()
-            val metrics = resources.displayMetrics
-            val bubbleCenterX = item.params.x + size / 2
-            val bubbleCenterY = item.params.y + size / 2
-            val trashCenterX = metrics.widthPixels / 2
-            val trashCenterY = metrics.heightPixels - dp(24) - dp(TRASH_SIZE_DP) / 2
-            val distance = hypot(
-              (bubbleCenterX - trashCenterX).toDouble(),
-              (bubbleCenterY - trashCenterY).toDouble()
-            )
-            setTrashHot(distance <= dp(80), item.view)
           }
           true
         }
         MotionEvent.ACTION_UP -> {
           handler.removeCallbacks(longPressRunnable)
-          setTrashHot(false, item.view)
           hideTrash()
           if (longPressed) {
             // Preview already opened; keep the bubble where it is.
@@ -398,9 +387,16 @@ class BubbleService : Service() {
           } else {
             val metrics = resources.displayMetrics
             val screenWidth = metrics.widthPixels
+            val screenHeight = metrics.heightPixels
             val bubbleCenterX = item.params.x + size / 2
-            if (trashHot) {
-              setTrashHot(false, item.view)
+            val bubbleCenterY = item.params.y + size / 2
+            val trashCenterX = screenWidth / 2
+            val trashCenterY = screenHeight - dp(24) - dp(TRASH_SIZE_DP) / 2
+            val distance = hypot(
+              (bubbleCenterX - trashCenterX).toDouble(),
+              (bubbleCenterY - trashCenterY).toDouble()
+            )
+            if (distance <= dp(80)) {
               removeBubble(item)
             } else {
               val toLeft = bubbleCenterX < screenWidth / 2
@@ -425,7 +421,6 @@ class BubbleService : Service() {
         }
         MotionEvent.ACTION_CANCEL -> {
           handler.removeCallbacks(longPressRunnable)
-          setTrashHot(false, item.view)
           hideTrash()
           true
         }
@@ -446,42 +441,18 @@ class BubbleService : Service() {
     }
   }
 
-  /** Highlights the trash target (red + haptic) while a bubble hovers it. */
-  private fun setTrashHot(hot: Boolean, anchor: View) {
-    if (trashHot == hot) return
-    trashHot = hot
-    val drawable = (trashView as? FrameLayout)?.background as? GradientDrawable
-    drawable?.setColor(
-      if (hot) {
-        0xE6FF3B30.toInt()
-      } else {
-        glassViewColor(true, LinkPreferences.isGlassEnabled(this))
-      }
-    )
-    if (hot) {
-      try {
-        anchor.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
-      } catch (_: Exception) {
-      }
-    }
-  }
-
   private fun showTrash() {
     if (isTrashShown) return
     val size = dp(TRASH_SIZE_DP)
-    val view = trashView ?: FrameLayout(this).apply {
+    val view = trashView ?: TextView(this).apply {
+      text = "✕"
+      setTextColor(Color.WHITE)
+      textSize = 28f
+      gravity = Gravity.CENTER
       background = GradientDrawable().apply {
         shape = GradientDrawable.OVAL
-        setColor(glassViewColor(true, LinkPreferences.isGlassEnabled(this@BubbleService)))
-        setStroke(dp(1), 0x66FFFFFF)
+        setColor(0xCC424242.toInt())
       }
-      val icon = ImageView(this@BubbleService).apply {
-        setImageResource(R.drawable.ic_ov_close)
-        layoutParams = FrameLayout.LayoutParams(dp(26), dp(26)).apply {
-          gravity = Gravity.CENTER
-        }
-      }
-      addView(icon)
     }.also { trashView = it }
 
     val params = WindowManager.LayoutParams(
