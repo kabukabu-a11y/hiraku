@@ -23,13 +23,12 @@ package arun.com.chromer.ui
 import android.app.Activity
 import android.content.Context
 import android.content.Intent
+import android.os.Build
 import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.AnimationSpec
-import androidx.compose.animation.core.snap
+import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.Box
@@ -44,6 +43,7 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Apps
@@ -63,8 +63,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.shadow
-import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asComposeRenderEffect
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
@@ -108,30 +107,12 @@ fun openHomeTab(context: Context, index: Int) {
 }
 
 /**
- * The resident floating bottom bar: four evenly spaced items with
- * the icon above the label and a Liquid Glass body.
- *
- * v2.3.2 (items 72/78): rebuilt on the mechanics of Glasmio's tab
- * bar — the one MeiloX ships — with the values ported from the
- * Glasmio 0.1.3 sources instead of the v2.3.1 in-house two-edge
- * gooey approximation:
- *  - one value [Animatable] carries the indicator, settled with
- *    DampedDragAnimation's spring(1f, 1000f); while dragging it is
- *    re-targeted at the finger with the same spring, so the pill
- *    trails the finger with UIKit's damped feel;
- *  - the indicator is a glass capsule — white at ~0.10 alpha with
- *    a light edge (GlassBottomBar's onDrawSurface base) — not the
- *    solid theme primary the v2.3.1 bar used;
- *  - travelling deforms the capsule by velocity exactly like
- *    GlassBottomBar's indicator layer: scaleX divides by
- *    (1 − term), scaleY multiplies by (1 − term/3), the term
- *    capped at ±0.2; pressing lifts it with the press spring
- *    (1f, 1000f) and the X/Y scale springs (0.6f/0.7f, 250f).
- *    Only the press target is moderated (1.06 instead of
- *    Glasmio's 78/56) because the user capped how far the pill
- *    may deform (item 59 follow-up).
- * The bar itself never leaves the screen; screens crossfade/slide
- * underneath it.
+ * The resident floating bottom bar (v2.3.0): four evenly spaced
+ * items with the icon above the label, a Liquid Glass body, and a
+ * gooey highlight that springs between items — or follows the
+ * finger while the bar is dragged sideways; releasing picks the
+ * item under the finger. The bar itself never leaves the screen;
+ * screens crossfade/slide underneath it.
  */
 @Composable
 fun HirakuBottomBar(
@@ -141,84 +122,44 @@ fun HirakuBottomBar(
 ) {
   val context = LocalContext.current
   val animLevel = remember { LinkPreferences.getAnimLevel(context) }
-  val glassOn = glassEnabled()
   val scope = rememberCoroutineScope()
-  val position = remember { Animatable(selectedIndex.toFloat()) }
-  val pressProgress = remember { Animatable(0f) }
-  val scaleX = remember { Animatable(1f) }
-  val scaleY = remember { Animatable(1f) }
+  val fast = remember { Animatable(selectedIndex.toFloat()) }
+  val slow = remember { Animatable(selectedIndex.toFloat()) }
   var dragging by remember { mutableStateOf(false) }
-
-  fun valueSpec(): AnimationSpec<Float> = when (animLevel) {
-    LinkPreferences.ANIM_OFF -> snap()
-    LinkPreferences.ANIM_WEAK -> tween(200, easing = OccEasing)
-    else -> spring(
-      dampingRatio = IosMotion.VALUE_DAMPING,
-      stiffness = IosMotion.VALUE_STIFFNESS,
-      visibilityThreshold = 0.001f
-    )
-  }
-
-  fun settleTo(index: Int) {
-    scope.launch { position.animateTo(index.toFloat(), valueSpec()) }
-  }
-
-  fun pressIn() {
-    if (animLevel == LinkPreferences.ANIM_OFF) return
-    scope.launch {
-      pressProgress.animateTo(
-        1f,
-        spring(
-          dampingRatio = IosMotion.PRESS_DAMPING,
-          stiffness = IosMotion.PRESS_STIFFNESS,
-          visibilityThreshold = 0.001f
-        )
-      )
-    }
-    scope.launch {
-      scaleX.animateTo(
-        PRESS_SCALE,
-        spring(
-          dampingRatio = IosMotion.SCALE_X_DAMPING,
-          stiffness = IosMotion.SCALE_X_STIFFNESS,
-          visibilityThreshold = 0.001f
-        )
-      )
-    }
-    scope.launch {
-      scaleY.animateTo(
-        PRESS_SCALE,
-        spring(
-          dampingRatio = IosMotion.SCALE_Y_DAMPING,
-          stiffness = IosMotion.SCALE_Y_STIFFNESS,
-          visibilityThreshold = 0.001f
-        )
-      )
-    }
-  }
-
-  fun pressOut() {
-    if (animLevel == LinkPreferences.ANIM_OFF) return
-    // Release uses the TabBarIndicator unlift spring (1f,
-    // 631.65468f) from DampedDragAnimation's native lens specs.
-    val release = spring<Float>(
-      dampingRatio = IosMotion.INDICATOR_DAMPING,
-      stiffness = IosMotion.INDICATOR_STIFFNESS,
-      visibilityThreshold = 0.001f
-    )
-    scope.launch { pressProgress.animateTo(0f, release) }
-    scope.launch { scaleX.animateTo(1f, release) }
-    scope.launch { scaleY.animateTo(1f, release) }
-  }
 
   LaunchedEffect(selectedIndex) {
     if (!dragging) {
-      position.animateTo(selectedIndex.toFloat(), valueSpec())
+      // The liquid highlight mostly keeps its shape while it
+      // slides (v2.3.1 items 59/66): the leading edge springs with
+      // a hint of overshoot, the trailing edge follows without
+      // overshoot, and the render caps how far the pill may
+      // stretch (see below).
+      val fastSpec = when (animLevel) {
+        LinkPreferences.ANIM_OFF -> tween<Float>(durationMillis = 1)
+        LinkPreferences.ANIM_WEAK -> tween(durationMillis = 160, easing = OccEasing)
+        else -> spring(
+          dampingRatio = 0.82f,
+          stiffness = Spring.StiffnessMedium
+        )
+      }
+      val slowSpec = when (animLevel) {
+        LinkPreferences.ANIM_OFF -> tween<Float>(durationMillis = 1)
+        LinkPreferences.ANIM_WEAK -> tween(durationMillis = 240, easing = OccEasing)
+        else -> spring(
+          dampingRatio = Spring.DampingRatioNoBouncy,
+          stiffness = Spring.StiffnessMediumLow
+        )
+      }
+      launch { fast.animateTo(selectedIndex.toFloat(), fastSpec) }
+      launch { slow.animateTo(selectedIndex.toFloat(), slowSpec) }
     }
   }
 
-  val displayIndex = position.value.roundToInt()
-    .coerceIn(0, HirakuTabLabels.lastIndex)
+  val displayIndex = if (dragging) {
+    fast.value.roundToInt().coerceIn(0, HirakuTabLabels.lastIndex)
+  } else {
+    selectedIndex
+  }
 
   Box(
     modifier = modifier
@@ -230,62 +171,50 @@ fun HirakuBottomBar(
       modifier = Modifier
         .fillMaxWidth()
         .height(64.dp)
-        .shadow(18.dp, shape, clip = false)
+        .shadow(14.dp, shape, clip = false)
         .glassBackground(shape)
     ) {
       val itemWidth = maxWidth / HirakuTabLabels.size
       val density = LocalDensity.current
       val itemWidthPx = with(density) { itemWidth.toPx() }
-      // Glasmio geometry: 4dp content padding around the
-      // indicator (GlasmioTabBarDefaults.ContentPadding).
-      val pillWidth = itemWidth - 8.dp
+      val pillColor = MaterialTheme.colorScheme.primary
 
-      // Glass indicator capsule (see the header note). The
-      // velocity squash mirrors GlassBottomBar's layer math:
-      // termX = clamp(v * 0.75), termY = clamp(v * 0.25) of the
-      // same normalized velocity, both capped at ±0.2; v is the
-      // indicator's speed normalized so a fast cross-bar fling
-      // (~2400 px/s) reaches the cap.
-      val velocityPx = position.velocity * itemWidthPx
-      val vNorm = velocityPx / 8000f
-      val termX = (vNorm * 0.75f)
-        .coerceIn(-IosMotion.VELOCITY_SQUASH_CAP, IosMotion.VELOCITY_SQUASH_CAP)
-      val termY = (vNorm * 0.25f)
-        .coerceIn(-IosMotion.VELOCITY_SQUASH_CAP, IosMotion.VELOCITY_SQUASH_CAP)
-      val indicatorShape = RoundedCornerShape(50)
+      // Liquid highlight (v2.3.1): one pill whose position is the
+      // average of a fast and a slow edge. The trailing edge's lag
+      // widens the pill a little while it travels, but the stretch
+      // is capped (about 1.15x in normal moves, never past 1.3x)
+      // so the pill keeps its shape and reads as sliding glass,
+      // not as a stretching blob. The gooey render effect only
+      // softens the pill's rim.
       Box(
         modifier = Modifier
-          .offset(
-            x = itemWidth * position.value + itemWidth / 2 - pillWidth / 2,
-            y = 4.dp
-          )
-          .width(pillWidth)
-          .height(56.dp)
-          .graphicsLayer {
-            this.scaleX = scaleX.value / (1f - termX)
-            this.scaleY = scaleY.value * (1f - termY)
-          }
-          .then(
-            if (glassOn) {
-              Modifier
-                .background(
-                  Brush.verticalGradient(
-                    listOf(
-                      Color.White.copy(alpha = 0.17f),
-                      Color.White.copy(alpha = 0.09f)
-                    )
-                  ),
-                  indicatorShape
-                )
-                .border(1.dp, Color.White.copy(alpha = 0.17f), indicatorShape)
-            } else {
-              Modifier.background(
-                MaterialTheme.colorScheme.primary,
-                indicatorShape
-              )
-            }
-          )
-      )
+          .fillMaxSize()
+          .then(gooeyLayerModifier(animLevel == LinkPreferences.ANIM_STRONG))
+      ) {
+        val center = (fast.value + slow.value) / 2f
+        val span = kotlin.math.abs(fast.value - slow.value)
+        val stretch = minOf(span * 0.45f, 0.30f)
+        val pillWidth = itemWidth * (1f + stretch) - 8.dp
+        Box(
+          modifier = Modifier
+            .offset(
+              x = itemWidth * center + itemWidth / 2 - pillWidth / 2,
+              y = 4.dp
+            )
+            .width(pillWidth)
+            .height(56.dp)
+            .background(pillColor, RoundedCornerShape(50))
+        )
+        Box(
+          modifier = Modifier
+            .offset(
+              x = itemWidth * slow.value + itemWidth / 2 - 12.dp,
+              y = 20.dp
+            )
+            .size(24.dp)
+            .background(pillColor, CircleShape)
+        )
+      }
 
       Row(modifier = Modifier.fillMaxSize()) {
         HirakuTabLabels.forEachIndexed { index, labelRes ->
@@ -302,26 +231,18 @@ fun HirakuBottomBar(
                 contentDescription = null,
                 modifier = Modifier.size(22.dp),
                 tint = if (selected) {
-                  if (glassOn) GlassContent else MaterialTheme.colorScheme.onPrimary
+                  MaterialTheme.colorScheme.onPrimary
                 } else {
-                  if (glassOn) {
-                    GlassContentSecondary
-                  } else {
-                    MaterialTheme.colorScheme.onSurfaceVariant
-                  }
+                  GlassContentSecondary
                 }
               )
               Text(
                 text = stringResource(labelRes),
                 style = MaterialTheme.typography.labelSmall,
                 color = if (selected) {
-                  if (glassOn) GlassContent else MaterialTheme.colorScheme.onPrimary
+                  MaterialTheme.colorScheme.onPrimary
                 } else {
-                  if (glassOn) {
-                    GlassContentSecondary
-                  } else {
-                    MaterialTheme.colorScheme.onSurfaceVariant
-                  }
+                  GlassContentSecondary
                 }
               )
             }
@@ -330,9 +251,11 @@ fun HirakuBottomBar(
       }
 
       // One gesture handler for the whole bar (v2.3.1 item 58):
-      // a tap selects the item under the finger, and a sideways
-      // drag makes the liquid follow the finger and selects the
-      // item it is released over.
+      // the v2.3.0 split — clickable items under a drag-only
+      // overlay — swallowed plain taps, so only drags switched
+      // tabs. Now a tap selects the item under the finger, and a
+      // sideways drag makes the liquid follow the finger and
+      // selects the item it is released over.
       Box(
         modifier = Modifier
           .fillMaxSize()
@@ -342,7 +265,6 @@ fun HirakuBottomBar(
               val startX = down.position.x
               var isDrag = false
               var released = false
-              pressIn()
               while (true) {
                 val event = awaitPointerEvent()
                 val change = event.changes.firstOrNull() ?: break
@@ -365,15 +287,31 @@ fun HirakuBottomBar(
                   // suspension scope: Animatable calls must run in
                   // a real coroutine, not in the gesture block.
                   scope.launch {
-                    position.animateTo(target, valueSpec())
+                    fast.snapTo(target)
+                    // Trailing edge: low-pass follow, so the pill
+                    // stretches only a little while travelling.
+                    slow.snapTo(slow.value + (target - slow.value) * 0.38f)
                   }
                 }
               }
-              pressOut()
               if (!released) {
                 // Gesture cancelled: settle back.
                 dragging = false
-                settleTo(selectedIndex)
+                scope.launch {
+                  fast.animateTo(
+                    selectedIndex.toFloat(),
+                    spring(dampingRatio = 0.82f, stiffness = Spring.StiffnessMedium)
+                  )
+                }
+                scope.launch {
+                  slow.animateTo(
+                    selectedIndex.toFloat(),
+                    spring(
+                      dampingRatio = Spring.DampingRatioNoBouncy,
+                      stiffness = Spring.StiffnessMediumLow
+                    )
+                  )
+                }
               } else if (!isDrag) {
                 val index = (startX / itemWidthPx).toInt()
                   .coerceIn(0, HirakuTabLabels.lastIndex)
@@ -381,13 +319,27 @@ fun HirakuBottomBar(
                   onSelect(index)
                 }
               } else {
-                val target = position.value.roundToInt()
+                val target = fast.value.roundToInt()
                   .coerceIn(0, HirakuTabLabels.lastIndex)
                 dragging = false
                 if (target != selectedIndex) {
                   onSelect(target)
                 } else {
-                  settleTo(selectedIndex)
+                  scope.launch {
+                    fast.animateTo(
+                      selectedIndex.toFloat(),
+                      spring(dampingRatio = 0.82f, stiffness = Spring.StiffnessMedium)
+                    )
+                  }
+                  scope.launch {
+                    slow.animateTo(
+                      selectedIndex.toFloat(),
+                      spring(
+                        dampingRatio = Spring.DampingRatioNoBouncy,
+                        stiffness = Spring.StiffnessMediumLow
+                      )
+                    )
+                  }
                 }
               }
             }
@@ -397,10 +349,33 @@ fun HirakuBottomBar(
   }
 }
 
-/**
- * Press lift of the indicator. Glasmio's tab animation uses
- * 78f/56f here; the user's shape-keeping cap (item 59 follow-up)
- * wins, so the lift is a gentle 1.06 and the travelling squash
- * (capped at ±0.2 like Glasmio) supplies the liquid feel.
- */
-private const val PRESS_SCALE = 1.06f
+/** Blur + alpha contrast, the classic gooey merge (API 31+). */
+fun gooeyLayerModifier(enabled: Boolean): Modifier {
+  if (!enabled || Build.VERSION.SDK_INT < 31) return Modifier
+  val effect = try {
+    val blur = android.graphics.RenderEffect.createBlurEffect(
+      10f,
+      10f,
+      android.graphics.Shader.TileMode.CLAMP
+    )
+    val matrix = android.graphics.ColorMatrix(
+      floatArrayOf(
+        1f, 0f, 0f, 0f, 0f,
+        0f, 1f, 0f, 0f, 0f,
+        0f, 0f, 1f, 0f, 0f,
+        0f, 0f, 0f, 30f, -3600f
+      )
+    )
+    val contrast = android.graphics.RenderEffect.createColorFilterEffect(
+      android.graphics.ColorMatrixColorFilter(matrix)
+    )
+    android.graphics.RenderEffect.createChainEffect(contrast, blur)
+  } catch (_: Exception) {
+    null
+  }
+  return if (effect == null) {
+    Modifier
+  } else {
+    Modifier.graphicsLayer { renderEffect = effect.asComposeRenderEffect() }
+  }
+}
