@@ -41,7 +41,6 @@ import android.graphics.Path
 import android.graphics.Color
 import android.graphics.Outline
 import android.graphics.PixelFormat
-import android.graphics.RectF
 import android.graphics.drawable.GradientDrawable
 import android.net.Uri
 import android.os.Build
@@ -81,7 +80,7 @@ import arun.com.chromer.history.HistoryActivity
 import arun.com.chromer.readlater.ReadLaterStore
 import arun.com.chromer.settings.SettingsActivity
 import arun.com.chromer.ui.glassViewColor
-import arun.com.chromer.ui.IosSpringInterpolator
+import arun.com.chromer.ui.occInterpolator
 import kotlin.math.hypot
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.math.abs
@@ -111,12 +110,6 @@ class OverlayService : Service() {
   private var menuView: View? = null
   private var menuParams: WindowManager.LayoutParams? = null
   private var menuContent: LinearLayout? = null
-  private var menuCatcherView: View? = null
-  private var menuAnchorView: View? = null
-  private var menuAboveAnchor: Boolean = true
-  private var menuPivotX: Float = 0f
-  private var menuPivotY: Float = 0f
-  private var dragCoverView: View? = null
   private var shieldView: TextView? = null
   private var shieldCountView: TextView? = null
   private var progressBar: ProgressBar? = null
@@ -437,12 +430,13 @@ class OverlayService : Service() {
 
     // Resize grip on the corner opposite the bar, so it never covers
     // the bar buttons. Dragging it resizes the window freely.
-    // v2.3.2 (item 76): the box is 48dp and the arc is drawn with
-    // the window's own corner radius (28dp) centered on the real
-    // corner, so the stroke traces the frame instead of floating
-    // inside a smaller box the way the v2.3.1 grip did.
-    val grip = ArcGripView(this, flipVertical = barOnTop, cornerRadiusPx = cornerRadius).apply {
-      layoutParams = FrameLayout.LayoutParams(dp(48), dp(48)).apply {
+    // v2.3.1 (item 70): the touch box is a generous 38dp (the
+    // v2.3.0 26dp box was easy to miss) and the arc is drawn with a
+    // dark outline under the white stroke, so it stays visible on
+    // light and dark pages alike, tracing the window's rounded
+    // corner — visually outside the page frame.
+    val grip = ArcGripView(this, flipVertical = barOnTop).apply {
+      layoutParams = FrameLayout.LayoutParams(dp(38), dp(38)).apply {
         gravity = (if (barOnTop) Gravity.BOTTOM else Gravity.TOP) or Gravity.END
       }
     }
@@ -609,15 +603,12 @@ class OverlayService : Service() {
           layoutParams = FrameLayout.LayoutParams(width, height).apply {
             gravity = layoutGravity
             // Keep the side strips off the bar so its buttons (close
-            // is at the very edge) stay fully tappable. The stop
-            // margin is the bar's real height — derived from the
-            // same constants buildBar uses (v2.3.2 item 76) —
-            // plus 2dp of clearance.
+            // is at the very edge) stay fully tappable.
             if (height == ViewGroup.LayoutParams.MATCH_PARENT) {
               if (barOnTop) {
-                topMargin = dp(BAR_TOP_ROW_DP + BAR_ICON_ROW_DP + 2)
+                topMargin = dp(100)
               } else {
-                bottomMargin = dp(BAR_TOP_ROW_DP + BAR_ICON_ROW_DP + 2)
+                bottomMargin = dp(100)
               }
             }
           }
@@ -780,10 +771,8 @@ class OverlayService : Service() {
     val targetCx = targetX + targetW / 2f
     val targetCy = targetY + targetH / 2f
     val animator = ValueAnimator.ofFloat(0f, 1f).apply {
-      // iOS CollapseSpring curve (1, 0.3) from Glasmio's
-      // LiquidMenuMorphMotion (v2.3.2 item 78c).
-      duration = if (animLevel == LinkPreferences.ANIM_WEAK) 260L else 420L
-      interpolator = IosSpringInterpolator(1f, 0.3f, duration)
+      duration = if (animLevel == LinkPreferences.ANIM_WEAK) 220L else 380L
+      interpolator = occInterpolator()
       addUpdateListener { animation ->
         val t = animation.animatedValue as Float
         val center = arcPoint(fromCx, fromCy, targetCx, targetCy, t)
@@ -946,12 +935,11 @@ class OverlayService : Service() {
    * keeps the blur attributes the window was added with and does
    * not re-apply changed ones in the middle of the continuous
    * relayout a resize drag produces, so the blur never actually
-   * stopped. v2.3.1 additionally made the window surface opaque.
-   * v2.3.2 (item 76): an opaque cover view is placed on top of
-   * the window's content for the duration of the drag and removed
-   * on release — a real view in the hierarchy cannot be ignored
-   * by the window manager the way attribute edits can, so the
-   * paused state is guaranteed visible whatever the ROM does.
+   * stopped. This version keeps the attribute change AND makes
+   * the window surface itself opaque for the duration of the
+   * drag: with no translucent surface, no backdrop blur can show
+   * through the window whatever the window manager does. The
+   * glass look is restored on release.
    */
   private fun setBlurPaused(paused: Boolean) {
     if (Build.VERSION.SDK_INT < 31) return
@@ -972,7 +960,6 @@ class OverlayService : Service() {
         val opaque = (0xFF shl 24) or (glassBarColor() and 0xFFFFFF)
         (root.background as? GradientDrawable)?.setColor(opaque)
         barView?.setBackgroundColor(opaque)
-        showDragCover(root)
       }
     } else if (blurWasOn) {
       p.flags = p.flags or blurFlag
@@ -986,50 +973,8 @@ class OverlayService : Service() {
       }
       (root.background as? GradientDrawable)?.setColor(glassBarColor())
       barView?.setBackgroundColor(glassBarColor())
-      hideDragCover()
       blurWasOn = false
     }
-  }
-
-  private fun showDragCover(root: FrameLayout) {
-    if (dragCoverView != null) return
-    val cover = View(this).apply {
-      setBackgroundColor((0xFF shl 24) or (glassBarColor() and 0xFFFFFF))
-      layoutParams = FrameLayout.LayoutParams(
-        ViewGroup.LayoutParams.MATCH_PARENT,
-        ViewGroup.LayoutParams.MATCH_PARENT
-      )
-    }
-    root.addView(cover)
-    dragCoverView = cover
-  }
-
-  private fun hideDragCover() {
-    dragCoverView?.let { cover ->
-      (cover.parent as? ViewGroup)?.removeView(cover)
-    }
-    dragCoverView = null
-  }
-
-  /**
-   * How much of the bottom edge overlay windows must stay out
-   * of: the system gesture strip (item 75). Overlay windows
-   * receive touches even inside the gesture area, so a
-   * full-height touchable catcher swallows the home gesture for
-   * as long as it lives.
-   */
-  private fun bottomGestureExclusionPx(): Int {
-    val resId = resources.getIdentifier(
-      "navigation_bar_height",
-      "dimen",
-      "android"
-    )
-    val navBar = if (resId > 0) {
-      resources.getDimensionPixelSize(resId)
-    } else {
-      dp(24)
-    }
-    return maxOf(navBar, dp(28)) + dp(8)
   }
 
   // ----- v2.2.0: tapping the blurred surround enters passthrough -----
@@ -1047,24 +992,13 @@ class OverlayService : Service() {
         true
       }
     }
-    // v2.3.2 (item 75): the catcher stops above the system
-    // gesture strip. The v2.3.1 catcher was full-screen and
-    // touchable for the overlay's whole lifetime, so touches
-    // starting in the bottom gesture area landed on it (and its
-    // ACTION_UP even entered passthrough) instead of reaching
-    // the system's home gesture — after opening an app, which
-    // shows the overlay, the home button/gesture stopped
-    // working until the overlay went away.
-    val metrics = resources.displayMetrics
     val cp = WindowManager.LayoutParams(
       WindowManager.LayoutParams.MATCH_PARENT,
-      metrics.heightPixels - bottomGestureExclusionPx(),
+      WindowManager.LayoutParams.MATCH_PARENT,
       WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
       WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
       PixelFormat.TRANSLUCENT
-    ).apply {
-      gravity = Gravity.TOP or Gravity.START
-    }
+    )
     try {
       wm.addView(catcher, cp)
       catcherView = catcher
@@ -1210,7 +1144,7 @@ class OverlayService : Service() {
       gravity = Gravity.CENTER_VERTICAL
       layoutParams = LinearLayout.LayoutParams(
         ViewGroup.LayoutParams.MATCH_PARENT,
-        dp(BAR_TOP_ROW_DP)
+        dp(46)
       )
       setPadding(dp(12), 0, dp(12), 0)
     }
@@ -1250,7 +1184,7 @@ class OverlayService : Service() {
       orientation = LinearLayout.HORIZONTAL
       layoutParams = LinearLayout.LayoutParams(
         ViewGroup.LayoutParams.MATCH_PARENT,
-        dp(BAR_ICON_ROW_DP)
+        dp(52)
       )
     }
 
@@ -1418,13 +1352,11 @@ class OverlayService : Service() {
     val rememberPos = LinkPreferences.isBubbleRememberPos(this)
     val toLeft = rememberPos && LinkPreferences.getBubbleSide(this) == 0
     val targetX = if (toLeft) 0 else metrics.widthPixels - size
-    // A remembered bubble Y can be stale (rotation, another
-    // screen): clamp the morph target into the display.
-    val targetY = (if (rememberPos && LinkPreferences.getBubbleY(this) >= 0) {
+    val targetY = if (rememberPos && LinkPreferences.getBubbleY(this) >= 0) {
       LinkPreferences.getBubbleY(this)
     } else {
       dp(120)
-    }).coerceIn(0, (metrics.heightPixels - size).coerceAtLeast(0))
+    }
     val startX = params.x
     val startY = params.y
     val startW = params.width
@@ -1434,16 +1366,14 @@ class OverlayService : Service() {
     val targetCx = targetX + size / 2f
     val targetCy = targetY + size / 2f
     val animator = ValueAnimator.ofFloat(0f, 1f).apply {
-      // iOS CollapseSpring curve (1, 0.3) from Glasmio's
-      // LiquidMenuMorphMotion (v2.3.2 item 78c).
       duration = if (LinkPreferences.getAnimLevel(this@OverlayService) ==
         LinkPreferences.ANIM_WEAK
       ) {
-        240L
+        200L
       } else {
-        420L
+        340L
       }
-      interpolator = IosSpringInterpolator(1f, 0.3f, duration)
+      interpolator = occInterpolator()
       addUpdateListener { animation ->
         val t = animation.animatedValue as Float
         val center = arcPoint(startCx, startCy, targetCx, targetCy, t)
@@ -1497,13 +1427,11 @@ class OverlayService : Service() {
       return
     }
     // Animate the height change (v2.3.1 item 66) instead of the
-    // v2.3.0 instant jump, on the iOS BlurOut spring curve
-    // (0.8, 0.45) from Glasmio's LiquidMenuMorphMotion
-    // (v2.3.2 item 78c).
+    // v2.3.0 instant jump.
     windowAnimator?.cancel()
     val animator = ValueAnimator.ofInt(startH, targetH).apply {
-      duration = 460L
-      interpolator = IosSpringInterpolator(0.8f, 0.45f, 460)
+      duration = 300L
+      interpolator = occInterpolator()
       addUpdateListener { animation ->
         params.height = animation.animatedValue as Int
         val maxY = (metrics.heightPixels - params.height).coerceAtLeast(0)
@@ -1710,7 +1638,6 @@ class OverlayService : Service() {
   private fun showMenu(anchor: View) {
     hideMenu()
     val wm = windowManager ?: return
-    menuAnchorView = anchor
     val dark = onDarkSurface()
     val content = LinearLayout(this).apply {
       orientation = LinearLayout.VERTICAL
@@ -1723,155 +1650,52 @@ class OverlayService : Service() {
       setPadding(dp(8), dp(8), dp(8), dp(8))
     }
     menuContent = content
+    showMenuPage(MenuPage.MAIN)
 
-    val panel = FrameLayout(this).apply {
-      addView(content)
-    }
-    menuView = panel
     val params = WindowManager.LayoutParams(
       dp(288),
       WindowManager.LayoutParams.WRAP_CONTENT,
       WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
-      // v2.3.2 (item 79): no FLAG_WATCH_OUTSIDE_TOUCH and no
-      // NOT_TOUCH_MODAL. The v2.3.1 panel watched for outside
-      // touches: a second tap on the ⋮ button was delivered to
-      // the panel as ACTION_OUTSIDE first, which hid the menu,
-      // and the button's own click then saw menuView == null and
-      // re-opened it — the toggle could never close the menu.
-      // Outside taps are now consumed by a dedicated catcher
-      // window behind the panel (see addMenuCatcher), so the
-      // button never receives the closing tap at all.
-      WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
+      WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+        WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
+        WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH,
       PixelFormat.TRANSLUCENT
     ).apply {
-      // Anchored to the ⋮ button's real position by
-      // positionMenu(); x/y are the panel's top-left corner.
-      gravity = Gravity.TOP or Gravity.START
+      val barOnTop = LinkPreferences.isBarOnTop(this@OverlayService)
+      gravity = (if (barOnTop) Gravity.TOP else Gravity.BOTTOM) or Gravity.END
+      x = dp(8)
+      y = if (barOnTop) {
+        statusBarHeight() + dp(120)
+      } else {
+        dp(120)
+      }
       if (LinkPreferences.getAnimLevel(this@OverlayService) != LinkPreferences.ANIM_OFF) {
         windowAnimations = R.style.OverlayMenuAnim
       }
     }
+    val panel = FrameLayout(this).apply {
+      addView(content)
+      setOnTouchListener { _, event ->
+        if (event.actionMasked == MotionEvent.ACTION_OUTSIDE) {
+          hideMenu()
+          true
+        } else {
+          false
+        }
+      }
+    }
+    menuView = panel
     menuParams = params
-    addMenuCatcher()
-    showMenuPage(MenuPage.MAIN)
-    positionMenu()
     try {
       wm.addView(panel, params)
     } catch (_: Exception) {
       menuView = null
       menuParams = null
       menuContent = null
-      menuAnchorView = null
-      removeMenuCatcher()
     }
-  }
-
-  /**
-   * Places the menu panel relative to its ⋮ anchor (item 79):
-   * above the button by default, flipped below when it would
-   * leave the top of the screen, and clamped on every side so
-   * the panel is never clipped. Called when the menu opens and
-   * again whenever its content (and therefore height) changes,
-   * so the panel follows the button wherever the window moves.
-   */
-  private fun positionMenu() {
-    val panel = menuView ?: return
-    val params = menuParams ?: return
-    val anchor = menuAnchorView ?: return
-    val metrics = resources.displayMetrics
-    val screenW = metrics.widthPixels
-    val screenH = metrics.heightPixels
-    val widthSpec = View.MeasureSpec.makeMeasureSpec(
-      params.width,
-      View.MeasureSpec.EXACTLY
-    )
-    val heightSpec = View.MeasureSpec.makeMeasureSpec(
-      0,
-      View.MeasureSpec.UNSPECIFIED
-    )
-    panel.measure(widthSpec, heightSpec)
-    val menuW = params.width
-    val menuH = panel.measuredHeight
-    val anchorLoc = IntArray(2)
-    anchor.getLocationOnScreen(anchorLoc)
-    val gap = dp(6)
-    val margin = dp(8)
-    val topSafe = statusBarHeight() + dp(4)
-    var x = anchorLoc[0] + anchor.width - menuW
-    x = x.coerceIn(margin, (screenW - menuW - margin).coerceAtLeast(margin))
-    val aboveY = anchorLoc[1] - gap - menuH
-    menuAboveAnchor = aboveY >= topSafe
-    var y = if (menuAboveAnchor) {
-      aboveY
-    } else {
-      anchorLoc[1] + anchor.height + gap
-    }
-    val maxY = (screenH - menuH - margin).coerceAtLeast(topSafe)
-    y = y.coerceIn(topSafe, maxY)
-    params.x = x
-    params.y = y
-    menuPivotX = (anchorLoc[0] + anchor.width / 2f - x)
-      .coerceIn(0f, menuW.toFloat())
-    menuPivotY = if (menuAboveAnchor) menuH.toFloat() else 0f
-    if (panel.isAttachedToWindow) {
-      try {
-        windowManager?.updateViewLayout(panel, params)
-      } catch (_: Exception) {
-      }
-    }
-  }
-
-  /**
-   * A transparent window behind the menu panel that consumes
-   * every touch outside the panel and closes the menu (item 79).
-   * Because the closing tap is consumed here, it can never reach
-   * the ⋮ button and re-open the menu — the race that broke the
-   * v2.3.1 toggle. Like the passthrough catcher, it stops above
-   * the system gesture strip (item 75).
-   */
-  @SuppressLint("ClickableViewAccessibility")
-  private fun addMenuCatcher() {
-    removeMenuCatcher()
-    val wm = windowManager ?: return
-    val catcher = View(this).apply {
-      setBackgroundColor(Color.TRANSPARENT)
-      setOnTouchListener { _, event ->
-        if (event.actionMasked == MotionEvent.ACTION_DOWN) {
-          hideMenu()
-        }
-        true
-      }
-    }
-    val metrics = resources.displayMetrics
-    val cp = WindowManager.LayoutParams(
-      WindowManager.LayoutParams.MATCH_PARENT,
-      metrics.heightPixels - bottomGestureExclusionPx(),
-      WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
-      WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
-      PixelFormat.TRANSLUCENT
-    ).apply {
-      gravity = Gravity.TOP or Gravity.START
-    }
-    try {
-      wm.addView(catcher, cp)
-      menuCatcherView = catcher
-    } catch (_: Exception) {
-    }
-  }
-
-  private fun removeMenuCatcher() {
-    menuCatcherView?.let { catcher ->
-      try {
-        windowManager?.removeView(catcher)
-      } catch (_: Exception) {
-      }
-    }
-    menuCatcherView = null
   }
 
   private fun hideMenu(animated: Boolean = false) {
-    removeMenuCatcher()
-    menuAnchorView = null
     val panel = menuView ?: return
     menuView = null
     menuParams = null
@@ -1880,16 +1704,16 @@ class OverlayService : Service() {
       LinkPreferences.getAnimLevel(this) != LinkPreferences.ANIM_OFF
     ) {
       // Close animation (item 69): fade and shrink toward the
-      // ⋮ button — the pivot is the button's real position
-      // inside the panel, computed by positionMenu (item 79).
-      panel.pivotX = menuPivotX
-      panel.pivotY = menuPivotY
+      // bar's ⋮ corner, then remove the window.
+      val barOnTop = LinkPreferences.isBarOnTop(this)
+      panel.pivotX = panel.width.toFloat()
+      panel.pivotY = if (barOnTop) 0f else panel.height.toFloat()
       panel.animate()
         .alpha(0f)
         .scaleX(0.92f)
         .scaleY(0.92f)
         .setDuration(170)
-        .setInterpolator(IosSpringInterpolator(1f, 0.2f, 170))
+        .setInterpolator(occInterpolator())
         .withEndAction {
           try {
             windowManager?.removeView(panel)
@@ -1914,13 +1738,6 @@ class OverlayService : Service() {
       MenuPage.MAIN -> buildMainMenuPage(content)
       MenuPage.METHODS -> buildMethodsMenuPage(content)
       MenuPage.ASPECT -> buildAspectMenuPage(content)
-    }
-    // The page changed the panel's height: re-anchor it to the
-    // ⋮ button so it stays attached to the button (item 79).
-    // During the initial showMenu call this is a no-op position
-    // pass; showMenu positions once more before adding the view.
-    if (menuParams != null) {
-      positionMenu()
     }
   }
 
@@ -2222,9 +2039,6 @@ class OverlayService : Service() {
     windowAnimator = null
     hideMenu()
     removeCatcher()
-    // The drag cover is a child of the root window removed below;
-    // just drop the reference.
-    dragCoverView = null
     findBarView?.let { bar ->
       try {
         windowManager?.removeView(bar)
@@ -2280,10 +2094,6 @@ class OverlayService : Service() {
     private const val NOTIFICATION_ID = 1001
 
     private const val BAR_COLOR = 0xFF202124.toInt()
-    // The bar's real row heights: buildBar builds exactly these,
-    // and the resize strips stop at their sum (item 76).
-    private const val BAR_TOP_ROW_DP = 46
-    private const val BAR_ICON_ROW_DP = 52
     private const val DESKTOP_UA =
       "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
 
@@ -2354,17 +2164,13 @@ class OverlayService : Service() {
 }
 
 /**
- * The resize corner grip: a small gentle arc tracing the window's
- * rounded corner. v2.3.2 (item 76): the arc is a true circular arc
- * with the window's own corner radius, centered one radius in from
- * the corner point — the v2.3.1 grip drew a 22dp quadratic curve
- * inset 3dp inside a 38dp box, so it floated off the 28dp frame it
- * was supposed to trace and looked detached from the corner.
+ * The resize corner grip (v2.3.0): a small gentle arc, drawn on the
+ * window's transparent rounded corner so it reads as sitting just
+ * outside the page frame.
  */
 private class ArcGripView(
   context: Context,
-  private val flipVertical: Boolean,
-  private val cornerRadiusPx: Float
+  private val flipVertical: Boolean
 ) : View(context) {
   private val density = context.resources.displayMetrics.density
   private val outlinePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
@@ -2384,24 +2190,23 @@ private class ArcGripView(
     super.onDraw(canvas)
     val w = width.toFloat()
     val h = height.toFloat()
-    val r = cornerRadiusPx
-    // The view sits flush in the window's corner, so the corner
-    // arc of the window frame is the circle of radius r centered
-    // one radius in from this view's outer corner.
-    val rect: RectF
-    val startAngle: Float
+    // One quarter arc hugging the window's rounded corner (28dp
+    // radius): the endpoints sit on the two edges meeting at the
+    // grip's outer corner, the quadratic control point is that
+    // corner (inset slightly), so the stroke traces the frame.
+    val inset = 3f * density
+    val r = 22f * density
+    val arcPath = Path()
     if (flipVertical) {
-      // Outer corner is bottom-right: arc from the right edge
-      // (angle 0) sweeping down to the bottom edge (angle 90).
-      rect = RectF(w - 2 * r, h - 2 * r, w, h)
-      startAngle = 0f
+      // Outer corner is bottom-right.
+      arcPath.moveTo(w - inset - r, h - inset)
+      arcPath.quadTo(w - inset, h - inset, w - inset, h - inset - r)
     } else {
-      // Outer corner is top-right: arc from the top edge
-      // (angle -90) sweeping to the right edge (angle 0).
-      rect = RectF(w - 2 * r, 0f, w, 2 * r)
-      startAngle = -90f
+      // Outer corner is top-right.
+      arcPath.moveTo(w - inset - r, inset)
+      arcPath.quadTo(w - inset, inset, w - inset, inset + r)
     }
-    canvas.drawArc(rect, startAngle, 90f, false, outlinePaint)
-    canvas.drawArc(rect, startAngle, 90f, false, paint)
+    canvas.drawPath(arcPath, outlinePaint)
+    canvas.drawPath(arcPath, paint)
   }
 }
