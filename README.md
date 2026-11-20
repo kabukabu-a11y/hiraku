@@ -33,6 +33,7 @@ After installing, set Hiraku as your default browser so links from other apps ar
 - **Bubbles**: dropping a bubble on the ✕ target actually deletes it now (a bug kept it from firing), the target's hit area is much larger and grows while hot, and bubbles spring back to the edge, slide into place and pop in/out with animations instead of teleporting.
 - **Smoother morphs**: the bubble ⇄ overlay transition now sweeps one broad, gentle arc (OPPO-style) in both directions with a ColorOS-style easing curve, and the peek toggle and overlay menu gained matching motion — the ⋮ button now toggles the menu closed with an animation, too.
 - **Chooser readability**: text and icons on the chooser sheet use a fixed palette that stays readable on the glass whatever is behind it, the sheet's follow pill got a softer in-between liquid feel, and the settings selection popup's highlight can no longer fly out of its frame.
+- **Overlay resize, fixed properly**: the corner arc grip is bigger and outlined so it stays visible on any page, the move handle now has a real touch area, the edge resize strips stop exactly at the bar, and the backdrop blur now genuinely pauses while resizing or moving the window (the window goes opaque during the drag instead of relying on blur flags the device ignored).
 
 ## What's new in v2.3.0
 
@@ -103,6 +104,7 @@ The ad-blocking list is built from the public [pgl.yoyo.org adservers](https://p
 - **バブル修正**：✕ターゲットに重ねても消えなかったバグを修正し、判定を大きく＋重ねるとターゲットが拡大するように。端へのスナップバック、並び替え、出入りにもアニメーションが付きました
 - **遷移を滑らかに**：バブル⇄オーバーレイの遷移はOPPO風の緩やかな大きな弧を描くようになり（往路・復路とも）、ColorOS系のイージングを採用。ピーク切替とオーバーレイのメニューにも動きが付き、⋮ボタンは再押しでアニメーション付きで閉じるトグル動作になりました
 - **選択シートの可読性**：シート上の文字・アイコンは背景に左右されない固定色になり、追従ピルは中間の柔らかさの液体感に。設定の選択ポップアップのハイライトが枠から飛び出さなくなりました
+- **オーバーレイのリサイズを本修正**：角の弧グリップを大きく＋縁取りでどのページでも見えるように、移動ハンドルに実用的なタッチ領域を持たせ、端のリサイズ帯はバーの高さちょうどで止まるように。そしてリサイズ・移動中の背景ぼかし一時停止が今度こそ効きます（端末が無視していたぼかしフラグ頼みをやめ、ドラッグ中は窓自体を不透明化）
 
 ## v2.3.0の新機能
 

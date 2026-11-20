@@ -106,6 +106,7 @@ class OverlayService : Service() {
   private var backButton: View? = null
   private var faviconView: ImageView? = null
   private var barTopRow: View? = null
+  private var barView: View? = null
   private var menuView: View? = null
   private var menuParams: WindowManager.LayoutParams? = null
   private var menuContent: LinearLayout? = null
@@ -289,6 +290,7 @@ class OverlayService : Service() {
     }
 
     val bar = buildBar()
+    barView = bar
     val progress = ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal).apply {
       max = 100
       visibility = View.GONE
@@ -428,10 +430,13 @@ class OverlayService : Service() {
 
     // Resize grip on the corner opposite the bar, so it never covers
     // the bar buttons. Dragging it resizes the window freely.
-    // v2.3.0: the corner grip is a small gentle arc sitting on the
-    // transparent rounded corner — visually outside the page frame.
+    // v2.3.1 (item 70): the touch box is a generous 38dp (the
+    // v2.3.0 26dp box was easy to miss) and the arc is drawn with a
+    // dark outline under the white stroke, so it stays visible on
+    // light and dark pages alike, tracing the window's rounded
+    // corner — visually outside the page frame.
     val grip = ArcGripView(this, flipVertical = barOnTop).apply {
-      layoutParams = FrameLayout.LayoutParams(dp(26), dp(26)).apply {
+      layoutParams = FrameLayout.LayoutParams(dp(38), dp(38)).apply {
         gravity = (if (barOnTop) Gravity.BOTTOM else Gravity.TOP) or Gravity.END
       }
     }
@@ -493,6 +498,7 @@ class OverlayService : Service() {
       val p = layoutParams ?: return@setOnTouchListener false
       when (event.actionMasked) {
         MotionEvent.ACTION_DOWN -> {
+          setBlurPaused(true)
           initialX = p.x
           initialY = p.y
           initialRawX = event.rawX
@@ -512,7 +518,8 @@ class OverlayService : Service() {
           true
         }
 
-        MotionEvent.ACTION_UP -> {
+        MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+          setBlurPaused(false)
           saveGeometry()
           v.performClick()
           true
@@ -566,7 +573,7 @@ class OverlayService : Service() {
           true
         }
 
-        MotionEvent.ACTION_UP -> {
+        MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
           setBlurPaused(false)
           saveGeometry()
           v.performClick()
@@ -580,8 +587,12 @@ class OverlayService : Service() {
     // v2.2.0: PC-like free resizing from the window edges. Thin
     // invisible strips on the left, right and far edge (the edge
     // opposite the bar) resize the window; blur pauses while sizing.
+    // v2.3.1 (item 70): strips are 20dp (16dp was easy to miss) and
+    // the side strips stop exactly at the bar's real height
+    // (46 + 52 = 98dp, +2dp clearance) instead of the old 106dp
+    // guess that left a dead band above the bar.
     if (LinkPreferences.isOverlayFreeResize(this)) {
-      val edgeThickness = dp(16)
+      val edgeThickness = dp(20)
       fun edgeGrip(
         layoutGravity: Int,
         width: Int,
@@ -595,9 +606,9 @@ class OverlayService : Service() {
             // is at the very edge) stay fully tappable.
             if (height == ViewGroup.LayoutParams.MATCH_PARENT) {
               if (barOnTop) {
-                topMargin = dp(106)
+                topMargin = dp(100)
               } else {
-                bottomMargin = dp(106)
+                bottomMargin = dp(100)
               }
             }
           }
@@ -651,7 +662,7 @@ class OverlayService : Service() {
               true
             }
 
-            MotionEvent.ACTION_UP -> {
+            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
               setBlurPaused(false)
               saveGeometry()
               v.performClick()
@@ -836,20 +847,32 @@ class OverlayService : Service() {
     screenWidth: Int,
     screenHeight: Int
   ) {
-    val handle = View(this)
-    handle.background = GradientDrawable().apply {
+    // v2.3.1 (item 70): the v2.3.0 handle was a bare 40x5dp pill —
+    // a 5dp-tall touch target is nearly impossible to grab, and
+    // misses landed on the resize edge strip behind it. The handle
+    // is now a 64x26dp touch area with the same 40x5dp pill drawn
+    // at its edge side; the pill's on-page position is unchanged.
+    val handle = FrameLayout(this)
+    val pill = View(this)
+    pill.background = GradientDrawable().apply {
       shape = GradientDrawable.RECTANGLE
       cornerRadius = dp(3).toFloat()
       setColor(0x59FFFFFF)
     }
-    val lp = FrameLayout.LayoutParams(dp(40), dp(5))
+    val pillLp = FrameLayout.LayoutParams(dp(40), dp(5)).apply {
+      gravity = (if (barOnTop) Gravity.BOTTOM else Gravity.TOP) or
+        Gravity.CENTER_HORIZONTAL
+      if (barOnTop) {
+        bottomMargin = dp(4)
+      } else {
+        topMargin = dp(4)
+      }
+    }
+    pill.layoutParams = pillLp
+    handle.addView(pill)
+    val lp = FrameLayout.LayoutParams(dp(64), dp(26))
     lp.gravity = (if (barOnTop) Gravity.BOTTOM else Gravity.TOP) or
       Gravity.CENTER_HORIZONTAL
-    if (barOnTop) {
-      lp.bottomMargin = dp(4)
-    } else {
-      lp.topMargin = dp(4)
-    }
     handle.layoutParams = lp
     root.addView(handle)
     var startX = 0
@@ -865,6 +888,7 @@ class OverlayService : Service() {
       }
       when (event.actionMasked) {
         MotionEvent.ACTION_DOWN -> {
+          setBlurPaused(true)
           startX = p.x
           startY = p.y
           rawX = event.rawX
@@ -882,7 +906,8 @@ class OverlayService : Service() {
           }
           true
         }
-        MotionEvent.ACTION_UP -> {
+        MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+          setBlurPaused(false)
           saveGeometry()
           v.performClick()
           true
@@ -902,6 +927,20 @@ class OverlayService : Service() {
 
   // ----- v2.2.0: blur is paused while resizing (cheaper + clearer) -----
 
+  /**
+   * Pauses the backdrop blur during geometry drags (v2.3.1 item
+   * 71). The v2.2.0/v2.3.0 attempts only edited the window's
+   * LayoutParams (clearing FLAG_BLUR_BEHIND, then also zeroing
+   * the radius) — on the user's ColorOS device the window manager
+   * keeps the blur attributes the window was added with and does
+   * not re-apply changed ones in the middle of the continuous
+   * relayout a resize drag produces, so the blur never actually
+   * stopped. This version keeps the attribute change AND makes
+   * the window surface itself opaque for the duration of the
+   * drag: with no translucent surface, no backdrop blur can show
+   * through the window whatever the window manager does. The
+   * glass look is restored on release.
+   */
   private fun setBlurPaused(paused: Boolean) {
     if (Build.VERSION.SDK_INT < 31) return
     val wm = windowManager ?: return
@@ -918,6 +957,9 @@ class OverlayService : Service() {
           wm.updateViewLayout(root, p)
         } catch (_: Exception) {
         }
+        val opaque = (0xFF shl 24) or (glassBarColor() and 0xFFFFFF)
+        (root.background as? GradientDrawable)?.setColor(opaque)
+        barView?.setBackgroundColor(opaque)
       }
     } else if (blurWasOn) {
       p.flags = p.flags or blurFlag
@@ -929,6 +971,8 @@ class OverlayService : Service() {
         wm.updateViewLayout(root, p)
       } catch (_: Exception) {
       }
+      (root.background as? GradientDrawable)?.setColor(glassBarColor())
+      barView?.setBackgroundColor(glassBarColor())
       blurWasOn = false
     }
   }
@@ -2003,6 +2047,8 @@ class OverlayService : Service() {
     }
     findBarView = null
     findBarParams = null
+    barView = null
+    barTopRow = null
     handleView?.let { handle ->
       try {
         windowManager?.removeView(handle)
@@ -2126,10 +2172,17 @@ private class ArcGripView(
   context: Context,
   private val flipVertical: Boolean
 ) : View(context) {
+  private val density = context.resources.displayMetrics.density
+  private val outlinePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+    style = Paint.Style.STROKE
+    strokeWidth = 3.4f * density
+    color = 0x59000000
+    strokeCap = Paint.Cap.ROUND
+  }
   private val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
     style = Paint.Style.STROKE
-    strokeWidth = 2f * context.resources.displayMetrics.density
-    color = 0x99FFFFFF.toInt()
+    strokeWidth = 2f * density
+    color = 0xD9FFFFFF.toInt()
     strokeCap = Paint.Cap.ROUND
   }
 
@@ -2137,14 +2190,23 @@ private class ArcGripView(
     super.onDraw(canvas)
     val w = width.toFloat()
     val h = height.toFloat()
+    // One quarter arc hugging the window's rounded corner (28dp
+    // radius): the endpoints sit on the two edges meeting at the
+    // grip's outer corner, the quadratic control point is that
+    // corner (inset slightly), so the stroke traces the frame.
+    val inset = 3f * density
+    val r = 22f * density
     val arcPath = Path()
     if (flipVertical) {
-      arcPath.moveTo(2f, h - 3f)
-      arcPath.quadTo(w - 3f, h - 3f, w - 3f, 2f)
+      // Outer corner is bottom-right.
+      arcPath.moveTo(w - inset - r, h - inset)
+      arcPath.quadTo(w - inset, h - inset, w - inset, h - inset - r)
     } else {
-      arcPath.moveTo(2f, 3f)
-      arcPath.quadTo(w - 3f, 3f, w - 3f, h - 2f)
+      // Outer corner is top-right.
+      arcPath.moveTo(w - inset - r, inset)
+      arcPath.quadTo(w - inset, inset, w - inset, inset + r)
     }
+    canvas.drawPath(arcPath, outlinePaint)
     canvas.drawPath(arcPath, paint)
   }
 }
