@@ -75,6 +75,17 @@ kotlin {
   }
 }
 
+// Something in the plugin stack (Whetstone/Anvil) pins the language
+// version to 1.9, which the Kotlin 2.4 compiler rejects outright
+// (UNSUPPORTED_LANGUAGE_VERSION in kaptGenerateStubs). Force 2.4 on
+// every Kotlin compile task, kapt stubs included.
+tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach {
+  compilerOptions {
+    languageVersion.set(org.jetbrains.kotlin.gradle.dsl.KotlinVersion.KOTLIN_2_4)
+    apiVersion.set(org.jetbrains.kotlin.gradle.dsl.KotlinVersion.KOTLIN_2_4)
+  }
+}
+
 whetstone {
   addOns.compose.set(true)
   addOns.workManager.set(false)
