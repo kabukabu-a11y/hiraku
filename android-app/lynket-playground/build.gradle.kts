@@ -13,8 +13,8 @@ android {
     applicationId = "com.kabukabu.hiraku"
     minSdk = 28
     targetSdk = 34
-    versionCode = 235
-    versionName = "2.3.5"
+    versionCode = 236
+    versionName = "2.3.6"
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     vectorDrawables {
@@ -92,6 +92,13 @@ dependencies {
   implementation("androidx.browser:browser:1.8.0")
 
   implementation(libs.molecule.runtime)
+
+  // v2.3.6 trial: real liquid glass (refraction + dispersion)
+  // for the main bottom bar on Android 13+, from the Java
+  // library AndroidLiquidGlassView (MIT). Java bytecode, so it
+  // does not hit the Kotlin-metadata wall that blocks Glasmio /
+  // Kyant backdrop on this project's Kotlin 1.9 toolchain.
+  implementation("com.qmdeve.liquidglass:core:1.1.0")
 
   // Dagger
   implementation(libs.dagger)

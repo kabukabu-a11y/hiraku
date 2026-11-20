@@ -25,8 +25,11 @@ import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.Canvas
+import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
+import android.view.Gravity
+import android.widget.FrameLayout
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
@@ -78,7 +81,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.ViewCompositionStrategy
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
@@ -110,6 +115,7 @@ import arun.com.chromer.ui.HirakuBottomBar
 import arun.com.chromer.ui.IosMotion
 import arun.com.chromer.ui.GlassTabSwitch
 import com.deliveryhero.whetstone.activity.ContributesActivityInjector
+import com.qmdeve.liquidglass.widget.LiquidGlassView
 import java.net.HttpURLConnection
 import java.net.URL
 import java.net.URLEncoder
@@ -132,25 +138,124 @@ class HomeActivity : ComponentActivity(), HasInjector {
   override fun onCreate(savedInstanceState: Bundle?) {
     super.onCreate(savedInstanceState)
     tabState.intValue = intent.getIntExtra(EXTRA_TAB, 0).coerceIn(0, 3)
-    setContent {
-      LynketTheme {
-        Surface(
-          modifier = Modifier.fillMaxSize(),
-          color = MaterialTheme.colorScheme.background
-        ) {
-          HomeHost(
-            tab = tabState.intValue,
-            onTabChange = { tabState.intValue = it },
-            onOpenUrl = { url ->
-              startActivity(LinkHandlerActivity.createOpenIntent(this, url))
-            }
-          )
+    // v2.3.6 trial: on Android 13+ with glass enabled, the main
+    // bar's body is a real liquid-glass view (QmDeve
+    // AndroidLiquidGlassView — refraction + dispersion) layered
+    // between the tab content and the bar composition, which
+    // then draws only its shadow, pill and items. Older devices
+    // and glass-off keep the classic single-composition path
+    // with the in-house glass.
+    if (Build.VERSION.SDK_INT >= 33 && LinkPreferences.isGlassEnabled(this)) {
+      setupLayeredGlass()
+    } else {
+      setContent {
+        LynketTheme {
+          Surface(
+            modifier = Modifier.fillMaxSize(),
+            color = MaterialTheme.colorScheme.background
+          ) {
+            HomeHost(
+              tab = tabState.intValue,
+              onTabChange = { tabState.intValue = it },
+              onOpenUrl = { url ->
+                startActivity(LinkHandlerActivity.createOpenIntent(this, url))
+              }
+            )
+          }
         }
       }
     }
     if (!SetupPreferences.isCompleted(this)) {
       startActivity(Intent(this, SetupActivity::class.java))
     }
+  }
+
+  /**
+   * The layered home screen for the liquid-glass trial: tab
+   * content in its own ComposeView (the glass view's sampling
+   * source), the LiquidGlassView aligned exactly with the bar
+   * body (20dp side margins, 64dp tall, 10dp above the bottom —
+   * the same geometry HirakuBottomBar uses), and the bar in a
+   * second ComposeView on top.
+   */
+  private fun setupLayeredGlass() {
+    val density = resources.displayMetrics.density
+    fun dp(v: Int) = (v * density).toInt()
+    val root = FrameLayout(this)
+
+    val contentView = ComposeView(this).apply {
+      setViewCompositionStrategy(
+        ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed
+      )
+      layoutParams = FrameLayout.LayoutParams(
+        FrameLayout.LayoutParams.MATCH_PARENT,
+        FrameLayout.LayoutParams.MATCH_PARENT
+      )
+      setContent {
+        LynketTheme {
+          Surface(
+            modifier = Modifier.fillMaxSize(),
+            color = MaterialTheme.colorScheme.background
+          ) {
+            HomeContent(
+              tab = tabState.intValue,
+              onOpenUrl = { url ->
+                startActivity(
+                  LinkHandlerActivity.createOpenIntent(this@HomeActivity, url)
+                )
+              }
+            )
+          }
+        }
+      }
+    }
+    root.addView(contentView)
+
+    val glassView = LiquidGlassView(this).apply {
+      layoutParams = FrameLayout.LayoutParams(
+        FrameLayout.LayoutParams.MATCH_PARENT,
+        dp(64)
+      ).apply {
+        gravity = Gravity.BOTTOM
+        leftMargin = dp(20)
+        rightMargin = dp(20)
+        bottomMargin = dp(10)
+      }
+      setCornerRadius(dp(32).toFloat())
+      // The in-house glass tint (0xFF1C1C1E), unchanged in dark
+      // mode per the design rule; alpha matches its strength.
+      setTintColorRed(0x1C / 255f)
+      setTintColorGreen(0x1C / 255f)
+      setTintColorBlue(0x1E / 255f)
+      setTintAlpha(0.54f)
+      setBlurRadius(24f)
+    }
+    root.addView(glassView)
+
+    val barView = ComposeView(this).apply {
+      setViewCompositionStrategy(
+        ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed
+      )
+      layoutParams = FrameLayout.LayoutParams(
+        FrameLayout.LayoutParams.MATCH_PARENT,
+        FrameLayout.LayoutParams.WRAP_CONTENT
+      ).apply {
+        gravity = Gravity.BOTTOM
+      }
+      setContent {
+        LynketTheme {
+          HirakuBottomBar(
+            selectedIndex = tabState.intValue,
+            onSelect = { tabState.intValue = it },
+            externalGlass = true
+          )
+        }
+      }
+    }
+    root.addView(barView)
+
+    setContentView(root)
+    root.post { glassView.bind(contentView) }
   }
 
   override fun onNewIntent(intent: Intent) {
@@ -172,67 +277,80 @@ private fun HomeHost(
   onTabChange: (Int) -> Unit,
   onOpenUrl: (String) -> Unit
 ) {
-  val context = LocalContext.current
-  val animLevel = remember { LinkPreferences.getAnimLevel(context) }
   Box(modifier = Modifier.fillMaxSize()) {
-    // Tab content is composed directly per tab, with only a
-    // small keyed enter animation (fade + slight slide, iOS
-    // CollapseSpring stiffness, response 0.3) that has no shared
-    // transition state and cannot wedge. History: this replaced
-    // AnimatedContent in v2.3.4 under the (wrong) theory that
-    // its transition was wedging — the actual item 80 root cause
-    // was in the bottom bar's gesture handler, which compared
-    // taps against a selectedIndex frozen at the app-start tab
-    // (see ui/BottomBar.kt, fixed in v2.3.5). The direct
-    // composition stays because it is simpler and cannot wedge.
-    var prevTab by remember { mutableIntStateOf(tab) }
-    val direction = if (tab >= prevTab) 1 else -1
-    LaunchedEffect(tab) { prevTab = tab }
-    key(tab) {
-      // Freeze this entry's direction at its first composition:
-      // the prevTab update above recomposes this group a frame
-      // later, and re-reading `direction` then would flip the
-      // slide direction mid-animation.
-      val entryDirection = remember { direction }
-      val progress = remember {
-        Animatable(if (animLevel == LinkPreferences.ANIM_OFF) 1f else 0f)
-      }
-      LaunchedEffect(Unit) {
-        if (animLevel != LinkPreferences.ANIM_OFF) {
-          progress.animateTo(
-            1f,
-            spring(
-              dampingRatio = 1f,
-              stiffness = IosMotion.stiffnessForResponse(0.3f)
-            )
-          )
-        }
-      }
-      Box(
-        modifier = Modifier
-          .fillMaxSize()
-          .graphicsLayer {
-            alpha = progress.value
-            translationX = (1f - progress.value) * entryDirection * 24.dp.toPx()
-          }
-      ) {
-        when (tab) {
-          0 -> HomeTab(onOpenUrl = onOpenUrl)
-          1 -> AppsSitesTab()
-          2 -> HistoryTab()
-          else -> SettingsScreen(
-            onBack = {},
-            showBack = false,
-            showBottomBar = false
-          )
-        }
-      }
-    }
+    HomeContent(tab = tab, onOpenUrl = onOpenUrl)
     HirakuBottomBar(
       selectedIndex = tab,
       onSelect = onTabChange,
       modifier = Modifier.align(Alignment.BottomCenter)
     )
+  }
+}
+
+/**
+ * The tab content alone (no bar). Split out of HomeHost in
+ * v2.3.6 so the layered liquid-glass setup can host it in its
+ * own ComposeView as the glass view's sampling source.
+ */
+@Composable
+private fun HomeContent(
+  tab: Int,
+  onOpenUrl: (String) -> Unit
+) {
+  val context = LocalContext.current
+  val animLevel = remember { LinkPreferences.getAnimLevel(context) }
+  // Tab content is composed directly per tab, with only a
+  // small keyed enter animation (fade + slight slide, iOS
+  // CollapseSpring stiffness, response 0.3) that has no shared
+  // transition state and cannot wedge. History: this replaced
+  // AnimatedContent in v2.3.4 under the (wrong) theory that
+  // its transition was wedging — the actual item 80 root cause
+  // was in the bottom bar's gesture handler, which compared
+  // taps against a selectedIndex frozen at the app-start tab
+  // (see ui/BottomBar.kt, fixed in v2.3.5). The direct
+  // composition stays because it is simpler and cannot wedge.
+  var prevTab by remember { mutableIntStateOf(tab) }
+  val direction = if (tab >= prevTab) 1 else -1
+  LaunchedEffect(tab) { prevTab = tab }
+  key(tab) {
+    // Freeze this entry's direction at its first composition:
+    // the prevTab update above recomposes this group a frame
+    // later, and re-reading `direction` then would flip the
+    // slide direction mid-animation.
+    val entryDirection = remember { direction }
+    val progress = remember {
+      Animatable(if (animLevel == LinkPreferences.ANIM_OFF) 1f else 0f)
+    }
+    LaunchedEffect(Unit) {
+      if (animLevel != LinkPreferences.ANIM_OFF) {
+        progress.animateTo(
+          1f,
+          spring(
+            dampingRatio = 1f,
+            stiffness = IosMotion.stiffnessForResponse(0.3f)
+          )
+        )
+      }
+    }
+    Box(
+      modifier = Modifier
+        .fillMaxSize()
+        .graphicsLayer {
+          alpha = progress.value
+          translationX = (1f - progress.value) * entryDirection * 24.dp.toPx()
+        }
+    ) {
+      when (tab) {
+        0 -> HomeTab(onOpenUrl = onOpenUrl)
+        1 -> AppsSitesTab()
+        2 -> HistoryTab()
+        else -> SettingsScreen(
+          onBack = {},
+          showBack = false,
+          showBottomBar = false
+        )
+      }
+    }
   }
 }
 

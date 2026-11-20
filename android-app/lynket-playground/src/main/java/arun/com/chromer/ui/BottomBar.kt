@@ -136,7 +136,12 @@ fun openHomeTab(context: Context, index: Int) {
 fun HirakuBottomBar(
   selectedIndex: Int,
   onSelect: (Int) -> Unit,
-  modifier: Modifier = Modifier
+  modifier: Modifier = Modifier,
+  // v2.3.6 trial: when true, the bar body itself is rendered by
+  // a LiquidGlassView layered underneath this composition (see
+  // HomeActivity's layered setup); this composition then draws
+  // only the shadow, the pill and the items.
+  externalGlass: Boolean = false
 ) {
   val context = LocalContext.current
   val animLevel = remember { LinkPreferences.getAnimLevel(context) }
@@ -245,7 +250,13 @@ fun HirakuBottomBar(
         .fillMaxWidth()
         .height(64.dp)
         .shadow(18.dp, shape, clip = false)
-        .glassBackground(shape)
+        .then(
+          if (externalGlass) {
+            Modifier.background(Color.Transparent, shape)
+          } else {
+            Modifier.glassBackground(shape)
+          }
+        )
     ) {
       val itemWidth = maxWidth / HirakuTabLabels.size
       val density = LocalDensity.current
