@@ -22,19 +22,19 @@ After installing, set Hiraku as your default browser so links from other apps ar
 - **Bubbles**: park links as floating bubbles; tap to open in the overlay, long-press to peek. The bubble position is remembered (can be turned off).
 - **Ad blocking**: domain blocking using open-source lists (pgl.yoyo.org ad server list and major ad networks), with a live blocked count in the bar.
 - **Secret mode (v2.1.0)**: open links without leaving history or tab records — for all links, or only for links from chosen apps.
-- **Quick share (v2.1.0)**: pin up to 5 apps as share targets and send links to them in one tap.
+- **Share targets in the chooser (v2.3.0)**: quick share is gone; apps that accept shared links now appear directly in the chooser as open methods, and you can add or remove them in Settings.
 - **URL security check (v2.1.0)**: warns before opening suspicious links (IP-address hosts, punycode domains, URLs with embedded user info). Can be turned off.
 - **And more**: article mode, tabs & history, desktop site toggle, a dedicated settings screen, and a Japanese / English UI (Settings → Language).
 
-## What's new in v2.2.0
+## What's new in v2.3.0
 
-- **A redesigned chooser**: a narrower floating sheet with a drag bar (pull it down to shrink the sheet), real app icons for browser methods and simple glyphs for the rest, a secret-mode switch right in the sheet, the URL safety result shown in place (including an all-clear), and checkboxes to pin the choice for the source app *or* for the site.
-- **Per-site rules**: pin an open method per domain (per-app rules still win).
-- **A fuller browser**: find in page, text size (75–150%), forced dark for pages, a persistent desktop-mode default, read-later, and screenshot sharing.
-- **A PC-like overlay**: resize from any edge or corner, the background blur pauses while you size the window, and tapping the blurred surround switches to using the app underneath.
-- **Motion & design**: springy chooser entrance with staggered items, an animated bottom navigation pill with a liquid/gooey highlight on the home screen, interactive segmented controls in Settings, and a strength setting (off / weak / strong).
-- **A new icon**: a white tile with a dark-navy "h" and cursor, with an inverted dark variant and themed-icon support.
-- **Everyday extras**: open the clipboard's URL from the home screen, search history and delete it by period, and back up / restore all settings to a file.
+- **Liquid Glass everywhere**: the chooser sheet, the resident bottom bar, the overlay menu and the bubbles are all glass (translucent tint + platform backdrop blur on Android 12+). Glass can be turned off in Settings, dynamic color follows your device, and ON toggles glow yellow so state is easy to read.
+- **A resident bottom bar**: Home / Apps / History / Settings, always on screen (Settings included), with a highlight that follows your finger as you drag across it. The Apps & Sites screen and the History / Bookmarks tabs are built around it.
+- **A rebuilt chooser**: a bottom-attached glass sheet (slight side margins, max width for tablets) whose preview area stays solid; drag the top handle and the sheet expands and collapses with a spring, following your finger; slide across the methods and release to pick; Cancel is red and stays at the bottom; share-target apps sit in the same list as the browser methods.
+- **One list to manage the chooser**: long-press drag to reorder with animation; items below the divider are hidden ("2nd browser (normal)" and "System (Custom Tab)" start hidden, newly added apps start hidden too).
+- **Settings, reworked**: categorized sections, glass selection popups (dark glass, blue checkmark, a pill highlight that slides to your pick) instead of segmented controls, a note explaining that secret mode still leaves history in the browser you open with, a chooser for the app that handles download links, and backup / restore that now covers *everything* — history, read-later, per-app settings (including secret), site rules and all preferences.
+- **A two-row overlay bar**: site icon + title + URL on top (drag it to move the window), seven drawn vector icons below (close / bubble / back / ad-block with counter / reload / expand / menu), all one size and stroke. The ⋮ menu is a glass panel that pops out of the bar, with an icon row (share / bookmark / history / settings) at the bottom. The move handle is now a small translucent pill over the page, resize grips are small arcs outside the frame, and the passthrough "back" handle is glass too.
+- **Site-colored bubbles**: the whole bubble is glass tinted with the site's color (from its favicon), only the center letter contrasts, and a small favicon badge sits at the bottom-right. Bubbles fly into the overlay along a curve (and shrink back the same way), and the drag-to-dismiss target is glass that turns red with a haptic tick when the bubble hovers over it.
 
 ## Permissions
 
@@ -84,19 +84,19 @@ The ad-blocking list is built from the public [pgl.yoyo.org adservers](https://p
 - **バブル（Web heads）**：リンクをバブルに留めておき、タップでそのままオーバーレイ表示。長押しでチラ見せプレビュー。バブルの位置は記憶されます（OFFにもできます）
 - **広告ブロック**：オープンソースのブロックリスト（pgl.yoyo.org の ad server list 等）を使ったドメイン遮断。バーにブロック件数が出て、その場でON/OFFできます
 - **シークレットモード（v2.1.0）**：履歴とタブに記録を残さず開けます。全体、または選んだアプリからのリンクだけに適用できます
-- **クイック共有（v2.1.0）**：共有先アプリを最大5個まで登録して、1タップでリンクを送れます
+- **共有先アプリを選択画面に（v2.3.0）**：クイック共有は廃止し、共有を受け付けるアプリが選択画面に「開き方」として直接並ぶようになりました（設定で追加・削除できます）
 - **URLセキュリティチェック（v2.1.0）**：IPアドレスへのリンク、国際化ドメイン（xn--）、ユーザー情報を含むURLなど、怪しいリンクを開く前に警告します（OFFにもできます）
 - **その他**：記事モード、タブと履歴、デスクトップサイト切替、細かい設定を集約した設定画面、日本語／英語の表示切替（設定 → 言語）
 
-## v2.2.0の新機能
+## v2.3.0の新機能
 
-- **選択画面を刷新**：横幅を絞った浮動シートに、ドラッグバー（下に引くと小さく、上に引くと広く）、ブラウザ系は実アイコン・機能系はシンプルな図形アイコン、シート内シークレット切替、URLセキュリティ結果のその場表示（安全な場合も表示）、アプリ固定に加えてサイト固定のチェックボックス
-- **サイトごとの設定**：ドメインごとに開き方を固定できます（アプリごとの設定が優先）
-- **ブラウザの充実**：ページ内検索、文字サイズ（75〜150%）、ページの強制ダーク、デスクトップモードの既定化、あとで読む、スクリーンショット共有
-- **PCライクな重ねて表示**：端や角から自由にリサイズ、リサイズ中は周りのぼかしを一時オフ、周りのぼかし部分をタップすると下のアプリを操作するモードへ
-- **動きとデザイン**：バネ感のある選択画面（項目が順に出現）、ホーム画面のアニメーションする下部ナビゲーションピル（液体・グーイーなハイライト）、設定画面のセグメントコントロール、アニメーションの強さ設定（オフ／弱い／強い）
-- **新しいアイコン**：白いタイルにダークネイビーの「h」とカーソル。反転したダーク版とテーマアイコンにも対応
-- **日常の便利**：ホーム画面からクリップボードのURLを開く、履歴の検索と期間削除、設定のバックアップ／復元（ファイル）
+- **全体がLiquid Glassに**：選択シート・常駐の下バー・オーバーレイのメニュー・バブルがすべてガラス質感（半透明＋Android 12以降は背景ぼかし）に。設定でガラス効果をOFFにもでき、ダイナミックカラーは端末の色に追従。ON状態のトグルは黄色く光って状態が一目で分かります
+- **常駐する下バー**：ホーム／アプリ／履歴／設定の4項目が全画面（設定画面含む）に常駐し、指でなぞるとハイライトが追従して切り替わります。「アプリとサイト」画面と履歴／ブックマークのタブ切替もこのバーを中心に再構成
+- **選択画面を再構築**：画面下に直接くっついたガラスシート（横に少し余白、タブレット向けに幅上限あり）で、プレビュー部分だけ非ガラス。一番上のハンドルをドラッグするとバネで拡縮し、項目をなぞって離すと選択。キャンセルは赤文字で常時最下部。共有先アプリもブラウザと同じリストに並びます
+- **選択項目の管理を1画面に**：長押しドラッグでアニメーション付き並べ替え、区切り線より下は非表示（「第2ブラウザ（通常）」「システム標準」は初期状態で非表示、新規追加アプリも非表示側から）
+- **設定を刷新**：カテゴリ分け、セグメント式を廃止してガラス選択ポップアップ（ダークガラス＋青チェック＋追従するピル型ハイライト）に統一、シークレットの「選んだブラウザ側の履歴には残る」旨の説明、ダウンロード用アプリの選択、そしてバックアップ／復元が全データ対象に（履歴・あとで読む・アプリ別設定（シークレット含む）・サイト別ルール・全設定）
+- **オーバーレイの下バーが2段構成に**：上段はサイトアイコン＋タイトル＋URL（ドラッグで窓を移動）、下段は描画アイコン7個（閉じる／バブル化／戻る／広告ブロック（件数付き）／リロード／拡大／メニュー）をサイズ・線幅統一で均等配置。⋮メニューはバーから出てくるガラスパネルで、下部に丸アイコン列（共有／ブックマーク／履歴／設定）。移動ハンドルはサイトに被さる小さな半透明ピル、リサイズの角グリップは枠の外側の小さな弧、「下のアプリを操作」中の戻るハンドルもガラス化
+- **バブルがサイト色のガラスに**：全体がサイトの色（ファビコンから取得）のガラス、中央の文字だけ別色、右下に小さなファビコンバッジ。バブル⇄オーバーレイはカーブを描いて拡大・縮小し、ドラッグ時の✕受けはガラスで、重ねると赤くなって振動します
 
 ## 権限について
 
