@@ -56,7 +56,6 @@ import android.view.View
 import android.view.ViewGroup
 import android.view.ViewOutlineProvider
 import android.view.WindowManager
-import android.view.animation.AccelerateDecelerateInterpolator
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
@@ -81,6 +80,8 @@ import arun.com.chromer.history.HistoryActivity
 import arun.com.chromer.readlater.ReadLaterStore
 import arun.com.chromer.settings.SettingsActivity
 import arun.com.chromer.ui.glassViewColor
+import arun.com.chromer.ui.occInterpolator
+import kotlin.math.hypot
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.math.abs
 
@@ -222,7 +223,21 @@ class OverlayService : Service() {
 
   /** The current glass surface color for the overlay windows. */
   private fun glassBarColor(): Int {
-    return glassViewColor(isDarkMode(), LinkPreferences.isGlassEnabled(this))
+    return glassViewColor(
+      isDarkMode(),
+      LinkPreferences.isGlassEnabled(this),
+      LinkPreferences.getGlassStrength(this)
+    )
+  }
+
+  /**
+   * Whether bar/menu content should use the light-on-dark
+   * palette. The glass tint is the same in light and dark mode
+   * now (v2.3.1 item 67), so with glass on the content is always
+   * the light palette; with glass off it follows the theme.
+   */
+  private fun onDarkSurface(): Boolean {
+    return LinkPreferences.isGlassEnabled(this) || isDarkMode()
   }
 
   private fun createAndShowOverlay(
@@ -457,7 +472,12 @@ class OverlayService : Service() {
       x = startX
       y = startY
       if (Build.VERSION.SDK_INT >= 31) {
-        blurBehindRadius = dp(36)
+        // Backdrop blur follows the glass strength (item 65).
+        blurBehindRadius = dp(
+          LinkPreferences.glassBlurRadiusDp(
+            LinkPreferences.getGlassStrength(this@OverlayService)
+          )
+        )
       }
       dimAmount = dim
     }
@@ -739,21 +759,18 @@ class OverlayService : Service() {
     val fromCy = fromRect[1] + fromRect[3] / 2f
     val targetCx = targetX + targetW / 2f
     val targetCy = targetY + targetH / 2f
-    val ctrlX = (fromCx + targetCx) / 2f
-    val ctrlY = minOf(fromCy, targetCy) - dp(80)
     val animator = ValueAnimator.ofFloat(0f, 1f).apply {
-      duration = if (animLevel == LinkPreferences.ANIM_WEAK) 200L else 340L
-      interpolator = AccelerateDecelerateInterpolator()
+      duration = if (animLevel == LinkPreferences.ANIM_WEAK) 220L else 380L
+      interpolator = occInterpolator()
       addUpdateListener { animation ->
         val t = animation.animatedValue as Float
-        val cx = quad(fromCx, ctrlX, targetCx, t)
-        val cy = quad(fromCy, ctrlY, targetCy, t)
+        val center = arcPoint(fromCx, fromCy, targetCx, targetCy, t)
         val w = lerp(fromRect[2].toFloat(), targetW.toFloat(), t)
         val h = lerp(fromRect[3].toFloat(), targetH.toFloat(), t)
         params.width = w.toInt()
         params.height = h.toInt()
-        params.x = (cx - w / 2f).toInt()
-        params.y = (cy - h / 2f).toInt()
+        params.x = (center[0] - w / 2f).toInt()
+        params.y = (center[1] - h / 2f).toInt()
         try {
           wm.updateViewLayout(root, params)
         } catch (_: Exception) {
@@ -764,9 +781,45 @@ class OverlayService : Service() {
     animator.start()
   }
 
-  private fun quad(a: Float, c: Float, b: Float, t: Float): Float {
+  /**
+   * Center path for the bubble <-> overlay morph (v2.3.1 item
+   * 62): a cubic Bézier whose control points sit a third and two
+   * thirds along the straight path and are pushed far out
+   * perpendicular to it (38% of the travel distance, capped), so
+   * the window sweeps one broad, gentle arc — OPPO-style —
+   * instead of the v2.3.0 quadratic curve that read as a right
+   * angle. The bulge always goes toward the top of the screen.
+   */
+  private fun arcPoint(
+    x0: Float,
+    y0: Float,
+    x3: Float,
+    y3: Float,
+    t: Float
+  ): FloatArray {
+    val dx = x3 - x0
+    val dy = y3 - y0
+    val dist = hypot(dx.toDouble(), dy.toDouble()).toFloat()
+    var px = -dy
+    var py = dx
+    if (py > 0f) {
+      px = -px
+      py = -py
+    }
+    val plen = hypot(px.toDouble(), py.toDouble()).toFloat()
+    val nx = if (plen > 0f) px / plen else 0f
+    val ny = if (plen > 0f) py / plen else -1f
+    val lift = minOf(dist * 0.38f, dp(240).toFloat())
+    val c1x = x0 + dx / 3f + nx * lift
+    val c1y = y0 + dy / 3f + ny * lift
+    val c2x = x0 + dx * 2f / 3f + nx * lift
+    val c2y = y0 + dy * 2f / 3f + ny * lift
     val u = 1f - t
-    return u * u * a + 2f * u * t * c + t * t * b
+    val x = u * u * u * x0 + 3f * u * u * t * c1x +
+      3f * u * t * t * c2x + t * t * t * x3
+    val y = u * u * u * y0 + 3f * u * u * t * c1y +
+      3f * u * t * t * c2y + t * t * t * y3
+    return floatArrayOf(x, y)
   }
 
   private fun lerp(a: Float, b: Float, t: Float): Float = a + (b - a) * t
@@ -868,7 +921,9 @@ class OverlayService : Service() {
       }
     } else if (blurWasOn) {
       p.flags = p.flags or blurFlag
-      p.blurBehindRadius = dp(36)
+      p.blurBehindRadius = dp(
+        LinkPreferences.glassBlurRadiusDp(LinkPreferences.getGlassStrength(this))
+      )
       p.dimAmount = 0.2f
       try {
         wm.updateViewLayout(root, p)
@@ -1076,7 +1131,7 @@ class OverlayService : Service() {
     titleColumn.addView(url)
     topRow.addView(favicon)
     topRow.addView(titleColumn)
-    if (!isDarkMode()) {
+    if (!onDarkSurface()) {
       title.setTextColor(0xFF202124.toInt())
       url.setTextColor(0xFF5F6368.toInt())
     }
@@ -1155,7 +1210,16 @@ class OverlayService : Service() {
     }
     val menu = createBarIconButton(R.drawable.ic_ov_more).apply {
       contentDescription = getString(R.string.act_menu)
-      setOnClickListener { showMenu(this) }
+      setOnClickListener {
+        // Toggle (v2.3.1 item 69): pressing ⋮ while the menu is
+        // open closes it (with the close animation) instead of
+        // reopening it.
+        if (menuView != null) {
+          hideMenu(animated = true)
+        } else {
+          showMenu(this)
+        }
+      }
     }
 
     iconRow.addView(close)
@@ -1191,7 +1255,7 @@ class OverlayService : Service() {
         ViewGroup.LayoutParams.MATCH_PARENT,
         1f
       )
-      if (!isDarkMode()) {
+      if (!onDarkSurface()) {
         setColorFilter(0xFF202124.toInt())
       }
     }
@@ -1257,27 +1321,24 @@ class OverlayService : Service() {
     val startCy = startY + startH / 2f
     val targetCx = targetX + size / 2f
     val targetCy = targetY + size / 2f
-    val ctrlX = (startCx + targetCx) / 2f
-    val ctrlY = minOf(startCy, targetCy) - dp(80)
     val animator = ValueAnimator.ofFloat(0f, 1f).apply {
       duration = if (LinkPreferences.getAnimLevel(this@OverlayService) ==
         LinkPreferences.ANIM_WEAK
       ) {
-        180L
+        200L
       } else {
-        300L
+        340L
       }
-      interpolator = AccelerateDecelerateInterpolator()
+      interpolator = occInterpolator()
       addUpdateListener { animation ->
         val t = animation.animatedValue as Float
-        val cx = quad(startCx, ctrlX, targetCx, t)
-        val cy = quad(startCy, ctrlY, targetCy, t)
+        val center = arcPoint(startCx, startCy, targetCx, targetCy, t)
         val w = lerp(startW.toFloat(), size.toFloat(), t)
         val h = lerp(startH.toFloat(), size.toFloat(), t)
         params.width = w.toInt()
         params.height = h.toInt()
-        params.x = (cx - w / 2f).toInt()
-        params.y = (cy - h / 2f).toInt()
+        params.x = (center[0] - w / 2f).toInt()
+        params.y = (center[1] - h / 2f).toInt()
         try {
           wm.updateViewLayout(root, params)
         } catch (_: Exception) {
@@ -1304,16 +1365,48 @@ class OverlayService : Service() {
       webView?.visibility = View.VISIBLE
     }
     isPeek = !isPeek
-    params.height = if (isPeek) peekHeight else fullHeight
-    val maxY = (metrics.heightPixels - params.height).coerceAtLeast(0)
-    if (params.y > maxY) {
-      params.y = maxY
+    val targetH = if (isPeek) peekHeight else fullHeight
+    val startH = params.height
+    if (LinkPreferences.getAnimLevel(this) == LinkPreferences.ANIM_OFF ||
+      startH == targetH || startH <= 0
+    ) {
+      params.height = targetH
+      val maxY = (metrics.heightPixels - params.height).coerceAtLeast(0)
+      if (params.y > maxY) {
+        params.y = maxY
+      }
+      try {
+        wm.updateViewLayout(root, params)
+      } catch (_: Exception) {
+      }
+      saveGeometry()
+      return
     }
-    try {
-      wm.updateViewLayout(root, params)
-    } catch (_: Exception) {
+    // Animate the height change (v2.3.1 item 66) instead of the
+    // v2.3.0 instant jump.
+    windowAnimator?.cancel()
+    val animator = ValueAnimator.ofInt(startH, targetH).apply {
+      duration = 300L
+      interpolator = occInterpolator()
+      addUpdateListener { animation ->
+        params.height = animation.animatedValue as Int
+        val maxY = (metrics.heightPixels - params.height).coerceAtLeast(0)
+        if (params.y > maxY) {
+          params.y = maxY
+        }
+        try {
+          wm.updateViewLayout(root, params)
+        } catch (_: Exception) {
+        }
+      }
+      addListener(object : android.animation.AnimatorListenerAdapter() {
+        override fun onAnimationEnd(animation: android.animation.Animator) {
+          saveGeometry()
+        }
+      })
     }
-    saveGeometry()
+    windowAnimator = animator
+    animator.start()
   }
 
   private fun toggleMinimize() {
@@ -1501,7 +1594,7 @@ class OverlayService : Service() {
   private fun showMenu(anchor: View) {
     hideMenu()
     val wm = windowManager ?: return
-    val dark = isDarkMode()
+    val dark = onDarkSurface()
     val content = LinearLayout(this).apply {
       orientation = LinearLayout.VERTICAL
       background = GradientDrawable().apply {
@@ -1558,15 +1651,38 @@ class OverlayService : Service() {
     }
   }
 
-  private fun hideMenu() {
+  private fun hideMenu(animated: Boolean = false) {
     val panel = menuView ?: return
+    menuView = null
+    menuParams = null
+    menuContent = null
+    if (animated &&
+      LinkPreferences.getAnimLevel(this) != LinkPreferences.ANIM_OFF
+    ) {
+      // Close animation (item 69): fade and shrink toward the
+      // bar's ⋮ corner, then remove the window.
+      val barOnTop = LinkPreferences.isBarOnTop(this)
+      panel.pivotX = panel.width.toFloat()
+      panel.pivotY = if (barOnTop) 0f else panel.height.toFloat()
+      panel.animate()
+        .alpha(0f)
+        .scaleX(0.92f)
+        .scaleY(0.92f)
+        .setDuration(170)
+        .setInterpolator(occInterpolator())
+        .withEndAction {
+          try {
+            windowManager?.removeView(panel)
+          } catch (_: Exception) {
+          }
+        }
+        .start()
+      return
+    }
     try {
       windowManager?.removeView(panel)
     } catch (_: Exception) {
     }
-    menuView = null
-    menuParams = null
-    menuContent = null
   }
 
   private enum class MenuPage { MAIN, METHODS, ASPECT }
@@ -1581,7 +1697,7 @@ class OverlayService : Service() {
     }
   }
 
-  private fun menuTextColor(): Int = if (isDarkMode()) Color.WHITE else 0xFF202124.toInt()
+  private fun menuTextColor(): Int = if (onDarkSurface()) Color.WHITE else 0xFF202124.toInt()
 
   private fun menuRow(
     iconRes: Int,
@@ -1605,7 +1721,7 @@ class OverlayService : Service() {
     val icon = ImageView(this).apply {
       setImageResource(iconRes)
       layoutParams = LinearLayout.LayoutParams(dp(21), dp(21))
-      if (!isDarkMode()) {
+      if (!onDarkSurface()) {
         setColorFilter(0xFF202124.toInt())
       }
     }
@@ -1786,8 +1902,8 @@ class OverlayService : Service() {
     val circle = FrameLayout(this).apply {
       background = GradientDrawable().apply {
         shape = GradientDrawable.OVAL
-        setColor(if (isDarkMode()) 0x26FFFFFF else 0x14000000)
-        setStroke(dp(1), if (isDarkMode()) 0x30FFFFFF else 0x1A000000)
+        setColor(if (onDarkSurface()) 0x26FFFFFF else 0x14000000)
+        setStroke(dp(1), if (onDarkSurface()) 0x30FFFFFF else 0x1A000000)
       }
       layoutParams = LinearLayout.LayoutParams(dp(44), dp(44))
     }
@@ -1796,7 +1912,7 @@ class OverlayService : Service() {
       layoutParams = FrameLayout.LayoutParams(dp(21), dp(21)).apply {
         gravity = Gravity.CENTER
       }
-      if (!isDarkMode()) {
+      if (!onDarkSurface()) {
         setColorFilter(0xFF202124.toInt())
       }
     }
