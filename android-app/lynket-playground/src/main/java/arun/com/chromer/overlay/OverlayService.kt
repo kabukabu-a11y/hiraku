@@ -20,6 +20,7 @@
 
 package arun.com.chromer.overlay
 
+import android.animation.ValueAnimator
 import android.annotation.SuppressLint
 import android.app.Notification
 import android.app.NotificationChannel
@@ -55,6 +56,7 @@ import android.view.View
 import android.view.ViewGroup
 import android.view.ViewOutlineProvider
 import android.view.WindowManager
+import android.view.animation.AccelerateDecelerateInterpolator
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
@@ -117,6 +119,7 @@ class OverlayService : Service() {
   private var findBarView: View? = null
   private var findBarParams: WindowManager.LayoutParams? = null
   private var blurWasOn: Boolean = false
+  private var windowAnimator: ValueAnimator? = null
 
   private var fullHeight: Int = 0
   private var peekHeight: Int = 0
@@ -158,7 +161,11 @@ class OverlayService : Service() {
         if (rootView != null) {
           webView?.loadUrl(url)
         } else {
-          createAndShowOverlay(url, intent.getBooleanExtra(EXTRA_PEEK, false))
+          createAndShowOverlay(
+            url,
+            intent.getBooleanExtra(EXTRA_PEEK, false),
+            intent.getIntArrayExtra(EXTRA_FROM_RECT)
+          )
         }
       }
 
@@ -218,7 +225,11 @@ class OverlayService : Service() {
     return glassViewColor(isDarkMode(), LinkPreferences.isGlassEnabled(this))
   }
 
-  private fun createAndShowOverlay(initialUrl: String, startInPeek: Boolean) {
+  private fun createAndShowOverlay(
+    initialUrl: String,
+    startInPeek: Boolean,
+    fromRect: IntArray? = null
+  ) {
     val metrics = resources.displayMetrics
     val screenWidth = metrics.widthPixels
     val screenHeight = metrics.heightPixels
@@ -697,13 +708,68 @@ class OverlayService : Service() {
     // The surround catcher must be added BEFORE the overlay window so
     // it sits underneath it in z-order (v2.2.0).
     addCatcher()
-    if (LinkPreferences.getAnimLevel(this) != LinkPreferences.ANIM_OFF) {
+    if (fromRect == null &&
+      LinkPreferences.getAnimLevel(this) != LinkPreferences.ANIM_OFF
+    ) {
       params.windowAnimations = R.style.OverlayWindowAnim
     }
     windowManager?.addView(root, params)
     root.requestFocus()
     wv.loadUrl(initialUrl)
+    if (fromRect != null && fromRect.size == 4) {
+      animateWindowFrom(fromRect, params)
+    }
   }
+
+  /**
+   * Bubble -> overlay (v2.3.0): the window grows out of the
+   * bubble's rect, its center travelling along a gentle curve.
+   */
+  private fun animateWindowFrom(fromRect: IntArray, params: WindowManager.LayoutParams) {
+    val wm = windowManager ?: return
+    val root = rootView ?: return
+    val animLevel = LinkPreferences.getAnimLevel(this)
+    if (animLevel == LinkPreferences.ANIM_OFF) return
+    params.windowAnimations = 0
+    val targetX = params.x
+    val targetY = params.y
+    val targetW = params.width
+    val targetH = params.height
+    val fromCx = fromRect[0] + fromRect[2] / 2f
+    val fromCy = fromRect[1] + fromRect[3] / 2f
+    val targetCx = targetX + targetW / 2f
+    val targetCy = targetY + targetH / 2f
+    val ctrlX = (fromCx + targetCx) / 2f
+    val ctrlY = minOf(fromCy, targetCy) - dp(80)
+    val animator = ValueAnimator.ofFloat(0f, 1f).apply {
+      duration = if (animLevel == LinkPreferences.ANIM_WEAK) 200L else 340L
+      interpolator = AccelerateDecelerateInterpolator()
+      addUpdateListener { animation ->
+        val t = animation.animatedValue as Float
+        val cx = quad(fromCx, ctrlX, targetCx, t)
+        val cy = quad(fromCy, ctrlY, targetCy, t)
+        val w = lerp(fromRect[2].toFloat(), targetW.toFloat(), t)
+        val h = lerp(fromRect[3].toFloat(), targetH.toFloat(), t)
+        params.width = w.toInt()
+        params.height = h.toInt()
+        params.x = (cx - w / 2f).toInt()
+        params.y = (cy - h / 2f).toInt()
+        try {
+          wm.updateViewLayout(root, params)
+        } catch (_: Exception) {
+        }
+      }
+    }
+    windowAnimator = animator
+    animator.start()
+  }
+
+  private fun quad(a: Float, c: Float, b: Float, t: Float): Float {
+    val u = 1f - t
+    return u * u * a + 2f * u * t * c + t * t * b
+  }
+
+  private fun lerp(a: Float, b: Float, t: Float): Float = a + (b - a) * t
 
   /**
    * The subtle move handle (v2.3.0): a small translucent pill
@@ -1161,8 +1227,71 @@ class OverlayService : Service() {
   private fun convertToBubble() {
     val url = currentUrl
     val secret = secretSession
-    BubbleService.open(this, url, secret)
-    closeOverlay()
+    val wm = windowManager
+    val root = rootView
+    val params = layoutParams
+    if (wm == null || root == null || params == null ||
+      LinkPreferences.getAnimLevel(this) == LinkPreferences.ANIM_OFF
+    ) {
+      BubbleService.open(this, url, secret)
+      closeOverlay()
+      return
+    }
+    // Overlay -> bubble (v2.3.0): shrink along a curve toward the
+    // bubble's docking spot, then swap to the real bubble.
+    val metrics = resources.displayMetrics
+    val size = dp(56)
+    val rememberPos = LinkPreferences.isBubbleRememberPos(this)
+    val toLeft = rememberPos && LinkPreferences.getBubbleSide(this) == 0
+    val targetX = if (toLeft) 0 else metrics.widthPixels - size
+    val targetY = if (rememberPos && LinkPreferences.getBubbleY(this) >= 0) {
+      LinkPreferences.getBubbleY(this)
+    } else {
+      dp(120)
+    }
+    val startX = params.x
+    val startY = params.y
+    val startW = params.width
+    val startH = params.height
+    val startCx = startX + startW / 2f
+    val startCy = startY + startH / 2f
+    val targetCx = targetX + size / 2f
+    val targetCy = targetY + size / 2f
+    val ctrlX = (startCx + targetCx) / 2f
+    val ctrlY = minOf(startCy, targetCy) - dp(80)
+    val animator = ValueAnimator.ofFloat(0f, 1f).apply {
+      duration = if (LinkPreferences.getAnimLevel(this@OverlayService) ==
+        LinkPreferences.ANIM_WEAK
+      ) {
+        180L
+      } else {
+        300L
+      }
+      interpolator = AccelerateDecelerateInterpolator()
+      addUpdateListener { animation ->
+        val t = animation.animatedValue as Float
+        val cx = quad(startCx, ctrlX, targetCx, t)
+        val cy = quad(startCy, ctrlY, targetCy, t)
+        val w = lerp(startW.toFloat(), size.toFloat(), t)
+        val h = lerp(startH.toFloat(), size.toFloat(), t)
+        params.width = w.toInt()
+        params.height = h.toInt()
+        params.x = (cx - w / 2f).toInt()
+        params.y = (cy - h / 2f).toInt()
+        try {
+          wm.updateViewLayout(root, params)
+        } catch (_: Exception) {
+        }
+      }
+      addListener(object : android.animation.AnimatorListenerAdapter() {
+        override fun onAnimationEnd(animation: android.animation.Animator) {
+          BubbleService.open(this@OverlayService, url, secret)
+          closeOverlay()
+        }
+      })
+    }
+    windowAnimator = animator
+    animator.start()
   }
 
   private fun togglePeek() {
@@ -1746,6 +1875,8 @@ class OverlayService : Service() {
   }
 
   private fun cleanup() {
+    windowAnimator?.cancel()
+    windowAnimator = null
     hideMenu()
     removeCatcher()
     findBarView?.let { bar ->
@@ -1794,6 +1925,7 @@ class OverlayService : Service() {
     const val EXTRA_URL = "arun.com.chromer.overlay.EXTRA_URL"
     const val EXTRA_PEEK = "arun.com.chromer.overlay.EXTRA_PEEK"
     const val EXTRA_SECRET = "arun.com.chromer.overlay.EXTRA_SECRET"
+    const val EXTRA_FROM_RECT = "arun.com.chromer.overlay.EXTRA_FROM_RECT"
     private const val ACTION_OPEN = "arun.com.chromer.overlay.ACTION_OPEN"
     private const val ACTION_CLOSE = "arun.com.chromer.overlay.ACTION_CLOSE"
     private const val CHANNEL_ID = "overlay_browsing"
@@ -1838,7 +1970,8 @@ class OverlayService : Service() {
       context: Context,
       url: String,
       peek: Boolean = false,
-      secret: Boolean = false
+      secret: Boolean = false,
+      fromRect: IntArray? = null
     ): Boolean {
       if (!canDrawOverlays(context)) return false
       return try {
@@ -1848,6 +1981,7 @@ class OverlayService : Service() {
             .putExtra(EXTRA_URL, url)
             .putExtra(EXTRA_PEEK, peek)
             .putExtra(EXTRA_SECRET, secret)
+            .putExtra(EXTRA_FROM_RECT, fromRect)
         )
         true
       } catch (_: Exception) {
