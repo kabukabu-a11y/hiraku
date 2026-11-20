@@ -178,10 +178,19 @@ class BubbleService : Service() {
         gravity = Gravity.BOTTOM or Gravity.END
       }
     }
+    val badgeImage = ImageView(this).apply {
+      scaleType = ImageView.ScaleType.CENTER_CROP
+      visibility = View.GONE
+      layoutParams = FrameLayout.LayoutParams(
+        FrameLayout.LayoutParams.MATCH_PARENT,
+        FrameLayout.LayoutParams.MATCH_PARENT
+      )
+    }
     val view = FrameLayout(this).apply {
       this.background = background
       elevation = dp(4).toFloat()
       addView(letterView)
+      addView(badgeImage)
       addView(badgeLetter)
     }
 
@@ -209,6 +218,7 @@ class BubbleService : Service() {
       secret = secret,
       background = background,
       letterView = letterView,
+      badgeImage = badgeImage,
       badgeLetter = badgeLetter
     )
     setupTouchListener(item)
