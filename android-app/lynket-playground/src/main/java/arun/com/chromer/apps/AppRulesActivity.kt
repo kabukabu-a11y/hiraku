@@ -69,6 +69,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
@@ -78,7 +79,10 @@ import arun.com.chromer.customtab.LinkPreferences
 import arun.com.chromer.customtab.OpenMethod
 import arun.com.chromer.customtab.displayLabel
 import arun.com.chromer.theme.LynketTheme
+import arun.com.chromer.ui.GlassOption
+import arun.com.chromer.ui.GlassSelectPopup
 import arun.com.chromer.ui.HirakuBottomBar
+import arun.com.chromer.ui.HirakuToggle
 import arun.com.chromer.ui.openHomeTab
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -307,11 +311,18 @@ fun AppRulesBody(mode: String) {
                   MaterialTheme.colorScheme.onSurfaceVariant
                 }
               )
+              if (isSecret) {
+                Text(
+                  text = stringResource(R.string.secret_mode),
+                  style = MaterialTheme.typography.bodySmall,
+                  color = MaterialTheme.colorScheme.primary
+                )
+              }
             }
           }
           when (mode) {
             AppRulesActivity.MODE_SECRET -> {
-              Switch(
+              HirakuToggle(
                 checked = isSecret,
                 onCheckedChange = { newValue ->
                   LinkPreferences.setAppSecret(context, app.packageName, newValue)
@@ -333,40 +344,63 @@ fun AppRulesBody(mode: String) {
 
   val app = editingApp
   if (app != null) {
+    // v2.3.0: the same glass selection popup as Settings, with the
+    // per-app secret toggle in the footer.
     val current = rules[app.packageName]
-    AlertDialog(
-      onDismissRequest = { editingApp = null },
-      title = { Text(app.label) },
-      text = {
-        Column {
-          MethodChoiceRow(
-            label = stringResource(
-              R.string.app_rules_default_option,
-              defaultMethod.displayLabel(context)
-            ),
-            selected = current == null,
-            onSelect = {
-              LinkPreferences.setAppRule(context, app.packageName, null)
-              rules = LinkPreferences.getAppRules(context)
-              editingApp = null
+    var secretChecked by remember(app.packageName) {
+      mutableStateOf(app.packageName in secretApps)
+    }
+    val options = listOf(
+      GlassOption(
+        label = stringResource(
+          R.string.app_rules_default_option,
+          defaultMethod.displayLabel(context)
+        )
+      )
+    ) + OpenMethod.CHOICES.map { GlassOption(label = it.displayLabel(context)) }
+    val selectedIndex = if (current == null) {
+      0
+    } else {
+      OpenMethod.CHOICES.indexOf(current) + 1
+    }
+    GlassSelectPopup(
+      options = options,
+      selectedIndex = selectedIndex,
+      onSelect = { index ->
+        if (index == 0) {
+          LinkPreferences.setAppRule(context, app.packageName, null)
+        } else {
+          LinkPreferences.setAppRule(
+            context,
+            app.packageName,
+            OpenMethod.CHOICES[index - 1]
+          )
+        }
+        rules = LinkPreferences.getAppRules(context)
+        editingApp = null
+      },
+      onDismiss = { editingApp = null },
+      footer = {
+        Row(
+          modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 10.dp),
+          verticalAlignment = Alignment.CenterVertically
+        ) {
+          Text(
+            text = stringResource(R.string.secret_mode),
+            color = Color.White,
+            style = MaterialTheme.typography.bodyLarge,
+            modifier = Modifier.weight(1f)
+          )
+          HirakuToggle(
+            checked = secretChecked,
+            onCheckedChange = { value ->
+              secretChecked = value
+              LinkPreferences.setAppSecret(context, app.packageName, value)
+              secretApps = LinkPreferences.getSecretApps(context)
             }
           )
-          for (method in OpenMethod.CHOICES) {
-            MethodChoiceRow(
-              label = method.displayLabel(context),
-              selected = current == method,
-              onSelect = {
-                LinkPreferences.setAppRule(context, app.packageName, method)
-                rules = LinkPreferences.getAppRules(context)
-                editingApp = null
-              }
-            )
-          }
-        }
-      },
-      confirmButton = {
-        TextButton(onClick = { editingApp = null }) {
-          Text(stringResource(R.string.act_close))
         }
       }
     )

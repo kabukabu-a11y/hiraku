@@ -60,6 +60,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
@@ -68,7 +69,10 @@ import arun.com.chromer.customtab.LinkPreferences
 import arun.com.chromer.customtab.OpenMethod
 import arun.com.chromer.customtab.displayLabel
 import arun.com.chromer.theme.LynketTheme
+import arun.com.chromer.ui.GlassOption
+import arun.com.chromer.ui.GlassSelectPopup
 import arun.com.chromer.ui.HirakuBottomBar
+import arun.com.chromer.ui.HirakuToggle
 import arun.com.chromer.ui.openHomeTab
 
 /**
@@ -131,11 +135,13 @@ private fun SiteRulesScreen(onBack: () -> Unit) {
 fun SiteRulesBody() {
   val context = LocalContext.current
   var rules by remember { mutableStateOf(LinkPreferences.getSiteRules(context)) }
+  var secretSites by remember { mutableStateOf(LinkPreferences.getSecretSites(context)) }
   var editingHost by remember { mutableStateOf<String?>(null) }
   var showAdd by remember { mutableStateOf(false) }
 
   fun refresh() {
     rules = LinkPreferences.getSiteRules(context)
+    secretSites = LinkPreferences.getSecretSites(context)
   }
 
   Column(
@@ -148,14 +154,21 @@ fun SiteRulesBody() {
       style = MaterialTheme.typography.bodySmall,
       color = MaterialTheme.colorScheme.onSurfaceVariant
     )
-    Spacer(modifier = Modifier.height(12.dp))
-    Button(
-      onClick = { showAdd = true },
-      modifier = Modifier.fillMaxWidth()
+    Spacer(modifier = Modifier.height(8.dp))
+    // v2.3.0: adding a site lives at the top of the list itself.
+    Row(
+      modifier = Modifier
+        .fillMaxWidth()
+        .clickable { showAdd = true }
+        .padding(vertical = 10.dp),
+      verticalAlignment = Alignment.CenterVertically
     ) {
-      Text(stringResource(R.string.site_rules_add))
+      Text(
+        text = stringResource(R.string.sites_add_top),
+        style = MaterialTheme.typography.bodyLarge,
+        color = MaterialTheme.colorScheme.primary
+      )
     }
-    Spacer(modifier = Modifier.height(12.dp))
     if (rules.isEmpty()) {
       Box(
         modifier = Modifier
@@ -175,6 +188,7 @@ fun SiteRulesBody() {
         contentPadding = PaddingValues(bottom = 96.dp)
       ) {
         items(rules.entries.toList(), key = { it.key }) { (host, method) ->
+          val isSecret = host in secretSites
           Row(
             modifier = Modifier
               .fillMaxWidth()
@@ -185,7 +199,8 @@ fun SiteRulesBody() {
             Column(modifier = Modifier.weight(1f)) {
               Text(text = host)
               Text(
-                text = method.displayLabel(context),
+                text = method.displayLabel(context) +
+                  if (isSecret) " ・ " + stringResource(R.string.secret_mode) else "",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
               )
@@ -232,55 +247,54 @@ fun SiteRulesBody() {
   }
 
   editingHost?.let { host ->
-    var selected by remember(host) {
-      mutableStateOf(LinkPreferences.getSiteRules(context)[host])
+    // v2.3.0: glass selection popup, with the per-site secret
+    // toggle in the footer.
+    val current = LinkPreferences.getSiteRules(context)[host]
+    var secretChecked by remember(host) {
+      mutableStateOf(host in LinkPreferences.getSecretSites(context))
     }
-    AlertDialog(
-      onDismissRequest = { editingHost = null },
-      title = { Text(host) },
-      text = {
-        Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
-          Row(
-            modifier = Modifier
-              .fillMaxWidth()
-              .clickable {
-                LinkPreferences.setSiteRule(context, host, null)
-                refresh()
-                editingHost = null
-              },
-            verticalAlignment = Alignment.CenterVertically
-          ) {
-            RadioButton(selected = selected == null, onClick = {
-              LinkPreferences.setSiteRule(context, host, null)
-              refresh()
-              editingHost = null
-            })
-            Text(stringResource(R.string.site_rules_default_option))
-          }
-          for (method in OpenMethod.CHOICES) {
-            Row(
-              modifier = Modifier
-                .fillMaxWidth()
-                .clickable {
-                  LinkPreferences.setSiteRule(context, host, method)
-                  refresh()
-                  editingHost = null
-                },
-              verticalAlignment = Alignment.CenterVertically
-            ) {
-              RadioButton(selected = selected == method, onClick = {
-                LinkPreferences.setSiteRule(context, host, method)
-                refresh()
-                editingHost = null
-              })
-              Text(method.displayLabel(context))
-            }
-          }
+    val options = listOf(
+      GlassOption(label = stringResource(R.string.site_rules_default_option))
+    ) + OpenMethod.CHOICES.map { GlassOption(label = it.displayLabel(context)) }
+    val selectedIndex = if (current == null) {
+      0
+    } else {
+      OpenMethod.CHOICES.indexOf(current) + 1
+    }
+    GlassSelectPopup(
+      options = options,
+      selectedIndex = selectedIndex,
+      onSelect = { index ->
+        if (index == 0) {
+          LinkPreferences.setSiteRule(context, host, null)
+        } else {
+          LinkPreferences.setSiteRule(context, host, OpenMethod.CHOICES[index - 1])
         }
+        refresh()
+        editingHost = null
       },
-      confirmButton = {
-        TextButton(onClick = { editingHost = null }) {
-          Text(stringResource(R.string.act_close))
+      onDismiss = { editingHost = null },
+      footer = {
+        Row(
+          modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 10.dp),
+          verticalAlignment = Alignment.CenterVertically
+        ) {
+          Text(
+            text = stringResource(R.string.secret_mode),
+            color = Color.White,
+            style = MaterialTheme.typography.bodyLarge,
+            modifier = Modifier.weight(1f)
+          )
+          HirakuToggle(
+            checked = secretChecked,
+            onCheckedChange = { value ->
+              secretChecked = value
+              LinkPreferences.setSiteSecret(context, host, value)
+              refresh()
+            }
+          )
         }
       }
     )

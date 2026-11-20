@@ -112,7 +112,7 @@ import arun.com.chromer.setup.SetupPreferences
 import arun.com.chromer.tabs.TabsActivity
 import arun.com.chromer.theme.LynketTheme
 import arun.com.chromer.ui.HirakuBottomBar
-import arun.com.chromer.ui.SegmentedControl
+import arun.com.chromer.ui.GlassTabSwitch
 import com.deliveryhero.whetstone.activity.ContributesActivityInjector
 import java.net.HttpURLConnection
 import java.net.URL
@@ -233,7 +233,7 @@ private fun AppsSitesTab() {
   var section by remember { mutableIntStateOf(0) }
   Column(modifier = Modifier.fillMaxSize()) {
     TopAppBar(title = { Text(stringResource(R.string.apps_sites_title)) })
-    SegmentedControl(
+    GlassTabSwitch(
       options = listOf(
         stringResource(R.string.apps_tab_apps),
         stringResource(R.string.apps_tab_sites)
@@ -258,7 +258,7 @@ private fun HistoryTab() {
   var section by remember { mutableIntStateOf(0) }
   Column(modifier = Modifier.fillMaxSize()) {
     TopAppBar(title = { Text(stringResource(R.string.history_title)) })
-    SegmentedControl(
+    GlassTabSwitch(
       options = listOf(
         stringResource(R.string.tab_history),
         stringResource(R.string.tab_bookmarks)

@@ -131,7 +131,7 @@ class LinkHandlerActivity : ComponentActivity() {
     val forced = OpenMethod.fromName(intent.getStringExtra(EXTRA_METHOD))
     val referrer = referrerPackage()
     val secret = intent.getBooleanExtra(EXTRA_SECRET, false) ||
-      LinkPreferences.isSecret(this, referrer)
+      LinkPreferences.isSecretForUrl(this, referrer, normalized)
 
     // Safety check: only for links arriving from other apps, not for
     // Hiraku's own internal dispatches.

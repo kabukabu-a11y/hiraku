@@ -26,6 +26,7 @@ import android.graphics.Canvas
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
@@ -36,7 +37,10 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -211,7 +215,8 @@ fun GlassSelectPopup(
   options: List<GlassOption>,
   selectedIndex: Int,
   onSelect: (Int) -> Unit,
-  onDismiss: () -> Unit
+  onDismiss: () -> Unit,
+  footer: (@Composable () -> Unit)? = null
 ) {
   if (options.isEmpty()) return
   val context = LocalContext.current
@@ -276,6 +281,7 @@ fun GlassSelectPopup(
               .clip(RoundedCornerShape(18.dp))
               .background(Color.White.copy(alpha = 0.14f))
           )
+          Column(modifier = Modifier.fillMaxWidth()) {
           Column(
             modifier = Modifier
               .fillMaxWidth()
@@ -339,6 +345,76 @@ fun GlassSelectPopup(
               }
             }
           }
+          if (footer != null) {
+            footer()
+          }
+          }
+        }
+      }
+    }
+  }
+}
+
+/**
+ * Top-of-screen switch (Apps / Sites, History / Bookmarks): a
+ * glass pill with a highlight that slides between the segments.
+ */
+@Composable
+fun GlassTabSwitch(
+  options: List<String>,
+  selectedIndex: Int,
+  onSelect: (Int) -> Unit,
+  modifier: Modifier = Modifier
+) {
+  val context = LocalContext.current
+  val animLevel = remember { LinkPreferences.getAnimLevel(context) }
+  val shape = RoundedCornerShape(50)
+  BoxWithConstraints(
+    modifier = modifier
+      .fillMaxWidth()
+      .height(46.dp)
+      .glassBackground(shape)
+      .padding(4.dp)
+  ) {
+    val segmentWidth = (maxWidth - 8.dp) / options.size
+    val offset by animateDpAsState(
+      targetValue = segmentWidth * selectedIndex,
+      animationSpec = if (animLevel == LinkPreferences.ANIM_OFF) {
+        snap()
+      } else {
+        spring(
+          dampingRatio = Spring.DampingRatioLowBouncy,
+          stiffness = Spring.StiffnessMediumLow
+        )
+      },
+      label = "glassTabSwitch"
+    )
+    Box(
+      modifier = Modifier
+        .offset(x = offset)
+        .width(segmentWidth)
+        .fillMaxHeight()
+        .clip(shape)
+        .background(MaterialTheme.colorScheme.primary)
+    )
+    Row(modifier = Modifier.fillMaxSize()) {
+      options.forEachIndexed { index, label ->
+        Box(
+          modifier = Modifier
+            .width(segmentWidth)
+            .fillMaxHeight()
+            .clickable { onSelect(index) },
+          contentAlignment = Alignment.Center
+        ) {
+          Text(
+            text = label,
+            color = if (index == selectedIndex) {
+              MaterialTheme.colorScheme.onPrimary
+            } else {
+              MaterialTheme.colorScheme.onSurfaceVariant
+            },
+            style = MaterialTheme.typography.labelLarge
+          )
         }
       }
     }
