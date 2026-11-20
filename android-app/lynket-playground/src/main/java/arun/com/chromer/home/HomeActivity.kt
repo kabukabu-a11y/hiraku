@@ -34,6 +34,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExitTransition
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -88,6 +89,7 @@ import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
@@ -112,6 +114,7 @@ import arun.com.chromer.setup.SetupPreferences
 import arun.com.chromer.tabs.TabsActivity
 import arun.com.chromer.theme.LynketTheme
 import arun.com.chromer.ui.HirakuBottomBar
+import arun.com.chromer.ui.IosMotion
 import arun.com.chromer.ui.GlassTabSwitch
 import com.deliveryhero.whetstone.activity.ContributesActivityInjector
 import java.net.HttpURLConnection
@@ -185,15 +188,27 @@ private fun HomeHost(
         if (animLevel == LinkPreferences.ANIM_OFF) {
           EnterTransition.None togetherWith ExitTransition.None
         } else {
+          // Tab switches ride the iOS CollapseSpring stiffness
+          // (response 0.3) instead of fixed tweens (v2.3.2
+          // item 78c).
           val direction = if (targetState > initialState) 1 else -1
+          val stiffness = IosMotion.stiffnessForResponse(0.3f)
+          val slideSpring = spring<IntOffset>(
+            dampingRatio = 1f,
+            stiffness = stiffness
+          )
+          val fadeSpring = spring<Float>(
+            dampingRatio = 1f,
+            stiffness = stiffness
+          )
           val enter = slideInHorizontally(
-            animationSpec = tween(280),
+            animationSpec = slideSpring,
             initialOffsetX = { it / 3 * direction }
-          ) + fadeIn(tween(280))
+          ) + fadeIn(fadeSpring)
           val exit = slideOutHorizontally(
-            animationSpec = tween(220),
+            animationSpec = slideSpring,
             targetOffsetX = { -it / 3 * direction }
-          ) + fadeOut(tween(220))
+          ) + fadeOut(fadeSpring)
           enter togetherWith exit
         }
       },
