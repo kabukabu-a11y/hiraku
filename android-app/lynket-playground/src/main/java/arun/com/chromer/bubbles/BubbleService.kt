@@ -84,6 +84,7 @@ class BubbleService : Service() {
   // position when the memory setting is on (v2.1.0).
   private var stackBaseY: Int = -1
   private var trashView: View? = null
+  private var trashCircleView: View? = null
   private var trashHot: Boolean = false
   private val mainHandler = Handler(Looper.getMainLooper())
   private var isTrashShown = false
@@ -230,7 +231,10 @@ class BubbleService : Service() {
       } else {
         screenWidth - size
       }
-      y = stackBaseY + bubbles.size * (size + dp(8))
+      // The dock never enters the system gesture strip
+      // (v2.3.3 item 80).
+      y = (stackBaseY + bubbles.size * (size + dp(8)))
+        .coerceAtMost(maxDockY())
     }
 
     val item = BubbleItem(
@@ -444,7 +448,7 @@ class BubbleService : Service() {
               if (stackBaseY >= 0) stackBaseY else dp(120)
             )
             val targetY = (baseY + index * (size + dp(8)))
-              .coerceAtMost((metrics.heightPixels - size).coerceAtLeast(0))
+              .coerceAtMost(maxDockY())
             if (LinkPreferences.getAnimLevel(this@BubbleService) ==
               LinkPreferences.ANIM_OFF
             ) {
@@ -532,7 +536,7 @@ class BubbleService : Service() {
     val size = dp(BUBBLE_SIZE_DP)
     val metrics = resources.displayMetrics
     val baseY = clampedBaseY(if (stackBaseY >= 0) stackBaseY else dp(120))
-    val maxY = (metrics.heightPixels - size).coerceAtLeast(0)
+    val maxY = maxDockY()
     val animate = LinkPreferences.getAnimLevel(this) != LinkPreferences.ANIM_OFF
     bubbles.forEachIndexed { index, item ->
       // Never fight a running animation (v2.3.2 item 73): the
@@ -576,10 +580,38 @@ class BubbleService : Service() {
 
   /** Keeps the stack's top edge inside the display (item 73). */
   private fun clampedBaseY(baseY: Int): Int {
+    return baseY.coerceIn(0, maxDockY())
+  }
+
+  /**
+   * How much of the bottom edge overlay windows must stay out
+   * of: the system gesture strip (same rule as OverlayService,
+   * v2.3.2 item 75), at the same 64dp-class minimum (v2.3.3
+   * item 80: ColorOS's gesture area is wider than the nominal
+   * navigation bar height). A bubble docked inside the strip
+   * sits under the user's home swipe and eats it, so dock
+   * targets clamp above it. A bubble being dragged may pass
+   * through the strip; only the docked position is clamped.
+   */
+  private fun bottomGestureExclusionPx(): Int {
+    val resId = resources.getIdentifier(
+      "navigation_bar_height",
+      "dimen",
+      "android"
+    )
+    val navBar = if (resId > 0) {
+      resources.getDimensionPixelSize(resId)
+    } else {
+      dp(24)
+    }
+    return maxOf(navBar, dp(56)) + dp(8)
+  }
+
+  /** The lowest Y a docked bubble may occupy (item 80). */
+  private fun maxDockY(): Int {
     val size = dp(BUBBLE_SIZE_DP)
-    val maxBase = (resources.displayMetrics.heightPixels - size)
-      .coerceAtLeast(0)
-    return baseY.coerceIn(0, maxBase)
+    return (resources.displayMetrics.heightPixels - size -
+      bottomGestureExclusionPx()).coerceAtLeast(0)
   }
 
   /**
@@ -599,8 +631,11 @@ class BubbleService : Service() {
     trash.getLocationOnScreen(trashLoc)
     val bubbleCx = bubbleLoc[0] + dp(BUBBLE_SIZE_DP) / 2.0
     val bubbleCy = bubbleLoc[1] + dp(BUBBLE_SIZE_DP) / 2.0
-    val trashCx = trashLoc[0] + dp(TRASH_SIZE_DP) / 2.0
-    val trashCy = trashLoc[1] + dp(TRASH_SIZE_DP) / 2.0
+    // The visible circle is centered in its (larger) window, so
+    // the window's real center IS the circle's center (v2.3.3
+    // item 82); use the measured size, not the circle size.
+    val trashCx = trashLoc[0] + trash.width / 2.0
+    val trashCy = trashLoc[1] + trash.height / 2.0
     return hypot(bubbleCx - trashCx, bubbleCy - trashCy) <= dp(140)
   }
 
@@ -608,7 +643,7 @@ class BubbleService : Service() {
   private fun setTrashHot(hot: Boolean, anchor: View) {
     if (trashHot == hot) return
     trashHot = hot
-    val drawable = (trashView as? FrameLayout)?.background as? GradientDrawable
+    val drawable = trashCircleView?.background as? GradientDrawable
     drawable?.setColor(
       if (hot) {
         0xE6FF3B30.toInt()
@@ -620,8 +655,13 @@ class BubbleService : Service() {
         )
       }
     )
-    // The target grows while hot, matching the enlarged hit area.
-    trashView?.animate()
+    // The target grows while hot, matching the enlarged hit
+    // area. The scale is applied to the inner circle view, whose
+    // window carries TRASH_PAD_DP of slack on every side, so
+    // the grown circle never clips against the window surface
+    // the way scaling the window-sized view did (v2.3.3
+    // item 82).
+    trashCircleView?.animate()
       ?.scaleX(if (hot) 1.18f else 1f)
       ?.scaleY(if (hot) 1.18f else 1f)
       ?.setDuration(150)
@@ -636,37 +676,56 @@ class BubbleService : Service() {
 
   private fun showTrash() {
     if (isTrashShown) return
-    val size = dp(TRASH_SIZE_DP)
+    // v2.3.3 (item 82): the window is larger than the visible
+    // circle by TRASH_PAD_DP on every side. Up to v2.3.2 the
+    // window was exactly the circle's size and setTrashHot
+    // scaled the window's own view to 1.18x, so the grown
+    // circle's rim was clipped by the window surface. The
+    // circle now lives in a centered inner view and the scale
+    // applies to it, inside the padded window.
+    val circleSize = dp(TRASH_SIZE_DP)
+    val windowSize = circleSize + dp(TRASH_PAD_DP) * 2
     val view = trashView ?: FrameLayout(this).apply {
-      background = GradientDrawable().apply {
-        shape = GradientDrawable.OVAL
-        setColor(
-          glassViewColor(
-            true,
-            LinkPreferences.isGlassEnabled(this@BubbleService),
-            LinkPreferences.getGlassStrength(this@BubbleService)
+      val circle = FrameLayout(this@BubbleService).apply {
+        background = GradientDrawable().apply {
+          shape = GradientDrawable.OVAL
+          setColor(
+            glassViewColor(
+              true,
+              LinkPreferences.isGlassEnabled(this@BubbleService),
+              LinkPreferences.getGlassStrength(this@BubbleService)
+            )
           )
-        )
-        setStroke(dp(1), 0x66FFFFFF)
-      }
-      val icon = ImageView(this@BubbleService).apply {
-        setImageResource(R.drawable.ic_ov_close)
-        layoutParams = FrameLayout.LayoutParams(dp(26), dp(26)).apply {
+          setStroke(dp(1), 0x66FFFFFF)
+        }
+        layoutParams = FrameLayout.LayoutParams(circleSize, circleSize).apply {
           gravity = Gravity.CENTER
         }
+        val icon = ImageView(this@BubbleService).apply {
+          setImageResource(R.drawable.ic_ov_close)
+          layoutParams = FrameLayout.LayoutParams(dp(26), dp(26)).apply {
+            gravity = Gravity.CENTER
+          }
+        }
+        addView(icon)
       }
-      addView(icon)
+      trashCircleView = circle
+      addView(circle)
     }.also { trashView = it }
 
     val params = WindowManager.LayoutParams(
-      size,
-      size,
+      windowSize,
+      windowSize,
       WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
       WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
       PixelFormat.TRANSLUCENT
     ).apply {
       gravity = Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL
-      y = dp(24)
+      // The circle is centered in the padded window, so its
+      // bottom edge sits TRASH_PAD_DP above the window's;
+      // lowering the window by the pad keeps the visible
+      // circle exactly where it was (24dp above the bottom).
+      y = dp(24) - dp(TRASH_PAD_DP)
     }
 
     try {
@@ -830,6 +889,9 @@ class BubbleService : Service() {
     private const val MAX_BUBBLES = 5
     private const val BUBBLE_SIZE_DP = 56
     private const val TRASH_SIZE_DP = 72
+    // Slack around the trash circle inside its window, so the
+    // hot-state scale never clips (v2.3.3 item 82).
+    private const val TRASH_PAD_DP = 20
     private const val CHANNEL_ID = "web_heads"
     private const val NOTIFICATION_ID = 1002
 
