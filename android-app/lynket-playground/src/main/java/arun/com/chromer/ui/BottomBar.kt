@@ -29,8 +29,8 @@ import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
@@ -58,10 +58,10 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.asComposeRenderEffect
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
@@ -121,27 +121,31 @@ fun HirakuBottomBar(
 ) {
   val context = LocalContext.current
   val animLevel = remember { LinkPreferences.getAnimLevel(context) }
-  val scope = rememberCoroutineScope()
   val fast = remember { Animatable(selectedIndex.toFloat()) }
   val slow = remember { Animatable(selectedIndex.toFloat()) }
   var dragging by remember { mutableStateOf(false) }
 
   LaunchedEffect(selectedIndex) {
     if (!dragging) {
+      // The liquid highlight mostly keeps its shape while it
+      // slides (v2.3.1 items 59/66): the leading edge springs with
+      // a hint of overshoot, the trailing edge follows without
+      // overshoot, and the render caps how far the pill may
+      // stretch (see below).
       val fastSpec = when (animLevel) {
         LinkPreferences.ANIM_OFF -> tween<Float>(durationMillis = 1)
-        LinkPreferences.ANIM_WEAK -> tween(durationMillis = 160)
+        LinkPreferences.ANIM_WEAK -> tween(durationMillis = 160, easing = OccEasing)
         else -> spring(
-          dampingRatio = Spring.DampingRatioMediumBouncy,
-          stiffness = Spring.StiffnessMediumLow
+          dampingRatio = 0.82f,
+          stiffness = Spring.StiffnessMedium
         )
       }
       val slowSpec = when (animLevel) {
         LinkPreferences.ANIM_OFF -> tween<Float>(durationMillis = 1)
-        LinkPreferences.ANIM_WEAK -> tween(durationMillis = 260)
+        LinkPreferences.ANIM_WEAK -> tween(durationMillis = 240, easing = OccEasing)
         else -> spring(
-          dampingRatio = Spring.DampingRatioLowBouncy,
-          stiffness = Spring.StiffnessLow
+          dampingRatio = Spring.DampingRatioNoBouncy,
+          stiffness = Spring.StiffnessMediumLow
         )
       }
       launch { fast.animateTo(selectedIndex.toFloat(), fastSpec) }
@@ -165,6 +169,7 @@ fun HirakuBottomBar(
       modifier = Modifier
         .fillMaxWidth()
         .height(64.dp)
+        .shadow(14.dp, shape, clip = false)
         .glassBackground(shape)
     ) {
       val itemWidth = maxWidth / HirakuTabLabels.size
@@ -172,29 +177,39 @@ fun HirakuBottomBar(
       val itemWidthPx = with(density) { itemWidth.toPx() }
       val pillColor = MaterialTheme.colorScheme.primary
 
-      // Gooey highlight: a fast edge and a slow edge, merged by a
-      // blur + alpha-contrast render effect on API 31+.
+      // Liquid highlight (v2.3.1): one pill whose position is the
+      // average of a fast and a slow edge. The trailing edge's lag
+      // widens the pill a little while it travels, but the stretch
+      // is capped (about 1.15x in normal moves, never past 1.3x)
+      // so the pill keeps its shape and reads as sliding glass,
+      // not as a stretching blob. The gooey render effect only
+      // softens the pill's rim.
       Box(
         modifier = Modifier
           .fillMaxSize()
           .then(gooeyLayerModifier(animLevel == LinkPreferences.ANIM_STRONG))
       ) {
-        val left = minOf(fast.value, slow.value)
+        val center = (fast.value + slow.value) / 2f
         val span = kotlin.math.abs(fast.value - slow.value)
+        val stretch = minOf(span * 0.45f, 0.30f)
+        val pillWidth = itemWidth * (1f + stretch) - 8.dp
         Box(
           modifier = Modifier
-            .offset(x = itemWidth * left + 4.dp, y = 4.dp)
-            .width(itemWidth * (span + 1f) - 8.dp)
+            .offset(
+              x = itemWidth * center + itemWidth / 2 - pillWidth / 2,
+              y = 4.dp
+            )
+            .width(pillWidth)
             .height(56.dp)
             .background(pillColor, RoundedCornerShape(50))
         )
         Box(
           modifier = Modifier
             .offset(
-              x = itemWidth * slow.value + itemWidth / 2 - 16.dp,
-              y = 16.dp
+              x = itemWidth * slow.value + itemWidth / 2 - 12.dp,
+              y = 20.dp
             )
-            .size(32.dp)
+            .size(24.dp)
             .background(pillColor, CircleShape)
         )
       }
@@ -205,12 +220,7 @@ fun HirakuBottomBar(
           Box(
             modifier = Modifier
               .width(itemWidth)
-              .fillMaxHeight()
-              .clickable {
-                if (index != selectedIndex) {
-                  onSelect(index)
-                }
-              },
+              .fillMaxHeight(),
             contentAlignment = Alignment.Center
           ) {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -221,7 +231,7 @@ fun HirakuBottomBar(
                 tint = if (selected) {
                   MaterialTheme.colorScheme.onPrimary
                 } else {
-                  MaterialTheme.colorScheme.onSurfaceVariant
+                  GlassContentSecondary
                 }
               )
               Text(
@@ -230,7 +240,7 @@ fun HirakuBottomBar(
                 color = if (selected) {
                   MaterialTheme.colorScheme.onPrimary
                 } else {
-                  MaterialTheme.colorScheme.onSurfaceVariant
+                  GlassContentSecondary
                 }
               )
             }
@@ -238,57 +248,86 @@ fun HirakuBottomBar(
         }
       }
 
-      // Sideways drag: the highlight follows the finger and the tab
-      // under it is selected on release.
+      // One gesture handler for the whole bar (v2.3.1 item 58):
+      // the v2.3.0 split — clickable items under a drag-only
+      // overlay — swallowed plain taps, so only drags switched
+      // tabs. Now a tap selects the item under the finger, and a
+      // sideways drag makes the liquid follow the finger and
+      // selects the item it is released over.
       Box(
         modifier = Modifier
           .fillMaxSize()
           .pointerInput(Unit) {
-            var startIndex = 0f
-            var totalDrag = 0f
-            detectHorizontalDragGestures(
-              onDragStart = {
-                startIndex = fast.value
-                totalDrag = 0f
-                dragging = true
-              },
-              onHorizontalDrag = { _, dragAmount ->
-                totalDrag += dragAmount
-                val target = (startIndex + totalDrag / itemWidthPx)
-                  .coerceIn(0f, HirakuTabLabels.lastIndex.toFloat())
-                scope.launch {
-                  fast.snapTo(target)
-                  slow.snapTo(target)
+            awaitEachGesture {
+              val down = awaitFirstDown(requireUnconsumed = false)
+              val startX = down.position.x
+              var isDrag = false
+              var released = false
+              while (true) {
+                val event = awaitPointerEvent()
+                val change = event.changes.firstOrNull() ?: break
+                if (!change.pressed) {
+                  released = true
+                  break
                 }
-              },
-              onDragEnd = {
+                change.consume()
+                if (!isDrag &&
+                  kotlin.math.abs(change.position.x - startX) >
+                  viewConfiguration.touchSlop
+                ) {
+                  isDrag = true
+                  dragging = true
+                }
+                if (isDrag) {
+                  val target = (change.position.x / itemWidthPx - 0.5f)
+                    .coerceIn(0f, HirakuTabLabels.lastIndex.toFloat())
+                  fast.snapTo(target)
+                  // Trailing edge: low-pass follow, so the pill
+                  // stretches only a little while travelling.
+                  slow.snapTo(slow.value + (target - slow.value) * 0.38f)
+                }
+              }
+              if (!released) {
+                // Gesture cancelled: settle back.
+                dragging = false
+                fast.animateTo(
+                  selectedIndex.toFloat(),
+                  spring(dampingRatio = 0.82f, stiffness = Spring.StiffnessMedium)
+                )
+                slow.animateTo(
+                  selectedIndex.toFloat(),
+                  spring(
+                    dampingRatio = Spring.DampingRatioNoBouncy,
+                    stiffness = Spring.StiffnessMediumLow
+                  )
+                )
+              } else if (!isDrag) {
+                val index = (startX / itemWidthPx).toInt()
+                  .coerceIn(0, HirakuTabLabels.lastIndex)
+                if (index != selectedIndex) {
+                  onSelect(index)
+                }
+              } else {
                 val target = fast.value.roundToInt()
                   .coerceIn(0, HirakuTabLabels.lastIndex)
                 dragging = false
                 if (target != selectedIndex) {
                   onSelect(target)
                 } else {
-                  // Settle back onto the current tab.
-                  scope.launch {
-                    fast.animateTo(
-                      selectedIndex.toFloat(),
-                      spring(stiffness = Spring.StiffnessMediumLow)
+                  fast.animateTo(
+                    selectedIndex.toFloat(),
+                    spring(dampingRatio = 0.82f, stiffness = Spring.StiffnessMedium)
+                  )
+                  slow.animateTo(
+                    selectedIndex.toFloat(),
+                    spring(
+                      dampingRatio = Spring.DampingRatioNoBouncy,
+                      stiffness = Spring.StiffnessMediumLow
                     )
-                  }
-                  scope.launch {
-                    slow.animateTo(
-                      selectedIndex.toFloat(),
-                      spring(stiffness = Spring.StiffnessLow)
-                    )
-                  }
+                  )
                 }
-              },
-              onDragCancel = {
-                dragging = false
-                scope.launch { fast.animateTo(selectedIndex.toFloat()) }
-                scope.launch { slow.animateTo(selectedIndex.toFloat()) }
               }
-            )
+            }
           }
       )
     }
