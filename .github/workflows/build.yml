@@ -45,11 +45,18 @@ jobs:
           LOG=${{ github.workspace }}/build.log
           esc() { printf '%s' "$1" | sed -e 's/%/%25/g' -e 's/\r/%0D/g' | cut -c1-600; }
           START=$(grep -n "FAILURE: Build failed" "$LOG" | head -1 | cut -d: -f1)
-          START=${START:-1}
+          START=${START:-200}
+          FROM=$((START > 200 ? START - 200 : 1))
+          { sed -n "${FROM},${START}p" "$LOG" || true; } \
+            | grep -iE "error|exception|caused|illegal|nosuch|noclass|unsupported|kapt|dagger|anvil" \
+            | grep -vE "^> Task |^[[:space:]]+at " \
+            | awk 'NF' | awk '!seen[$0]++' | head -22 | while IFS= read -r line; do
+            echo "::error::$(esc "$line")"
+          done
           { sed -n "${START},\$p" "$LOG" || true; } \
             | grep -vE "^[[:space:]]+at " \
             | grep -vE "^\* (Try|Get more help)" \
-            | awk 'NF' | awk '!seen[$0]++' | head -46 | while IFS= read -r line; do
+            | awk 'NF' | awk '!seen[$0]++' | head -22 | while IFS= read -r line; do
             echo "::error::$(esc "$line")"
           done
       - name: Upload build log
