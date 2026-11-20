@@ -367,13 +367,17 @@ fun HirakuToggle(
       // UIKit switch thumb springs, ported from Glasmio's
       // DampedDragAnimation (v2.3.2 item 78c): turning on uses the
       // lift spec, turning off the softer unlift spec.
-      checked -> spring(
-        dampingRatio = IosMotion.SWITCH_ON_DAMPING,
-        stiffness = IosMotion.SWITCH_ON_STIFFNESS
-      )
       else -> spring(
-        dampingRatio = IosMotion.SWITCH_OFF_DAMPING,
-        stiffness = IosMotion.SWITCH_OFF_STIFFNESS
+        dampingRatio = if (checked) {
+          IosMotion.SWITCH_ON_DAMPING
+        } else {
+          IosMotion.SWITCH_OFF_DAMPING
+        },
+        stiffness = if (checked) {
+          IosMotion.SWITCH_ON_STIFFNESS
+        } else {
+          IosMotion.SWITCH_OFF_STIFFNESS
+        }
       )
     },
     label = "toggleKnob"
