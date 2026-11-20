@@ -32,15 +32,12 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.EnterTransition
-import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
-import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -113,7 +110,6 @@ import arun.com.chromer.ui.appLabel
 import arun.com.chromer.ui.GlassContent
 import arun.com.chromer.ui.GlassContentSecondary
 import arun.com.chromer.ui.glassBackground
-import arun.com.chromer.ui.IosMotion
 import arun.com.chromer.ui.rememberAppIcon
 import java.net.HttpURLConnection
 import java.net.URL
@@ -419,8 +415,13 @@ class LinkHandlerActivity : ComponentActivity() {
         if (animLevel == LinkPreferences.ANIM_OFF) {
           expandAnim.snapTo(target)
         } else {
-          // Glasmio's sheet spring (1, 300) (v2.3.2 item 78c).
-          expandAnim.animateTo(target, IosMotion.SHEET)
+          expandAnim.animateTo(
+            target,
+            spring(
+              dampingRatio = Spring.DampingRatioMediumBouncy,
+              stiffness = Spring.StiffnessMediumLow
+            )
+          )
         }
       }
     }
@@ -434,10 +435,6 @@ class LinkHandlerActivity : ComponentActivity() {
     // and settles back to exactly one row — an in-between liquid
     // feel, softer than the rigid v2.3.0 pill but never as extreme
     // as a gooey blob. The stretch is capped at 0.4 rows.
-    // v2.3.2 (item 78c): the two edges run on the response-based
-    // stiffnesses of Glasmio's LiquidMenuMorphMotion springs —
-    // fast edge = BlurOut (damping 0.8, response 0.45), slow edge
-    // = EjectLensOff (damping 1, response 0.6).
     val pillFast = remember { Animatable(0f) }
     val pillSlow = remember { Animatable(0f) }
     LaunchedEffect(hoverIndex) {
@@ -451,8 +448,8 @@ class LinkHandlerActivity : ComponentActivity() {
             pillFast.animateTo(
               target.toFloat(),
               spring(
-                dampingRatio = 0.8f,
-                stiffness = IosMotion.stiffnessForResponse(0.45f)
+                dampingRatio = 0.85f,
+                stiffness = Spring.StiffnessMedium
               )
             )
           }
@@ -460,8 +457,8 @@ class LinkHandlerActivity : ComponentActivity() {
             pillSlow.animateTo(
               target.toFloat(),
               spring(
-                dampingRatio = 1f,
-                stiffness = IosMotion.stiffnessForResponse(0.6f)
+                dampingRatio = Spring.DampingRatioNoBouncy,
+                stiffness = Spring.StiffnessLow
               )
             )
           }
@@ -482,21 +479,12 @@ class LinkHandlerActivity : ComponentActivity() {
           LinkPreferences.ANIM_OFF -> EnterTransition.None
           LinkPreferences.ANIM_WEAK -> fadeIn(tween(150))
           else -> slideInVertically(
-            // Glasmio's sheet spring (1, 300) (v2.3.2 item 78c).
-            animationSpec = IosMotion.SHEET_OFFSET,
+            animationSpec = spring(
+              dampingRatio = Spring.DampingRatioMediumBouncy,
+              stiffness = Spring.StiffnessMediumLow
+            ),
             initialOffsetY = { it }
           ) + fadeIn(tween(200))
-        },
-        // The sheet previously vanished instantly on dismiss;
-        // give it the same sourced spring on the way out
-        // (v2.3.2 item 78c).
-        exit = when (animLevel) {
-          LinkPreferences.ANIM_OFF -> ExitTransition.None
-          LinkPreferences.ANIM_WEAK -> fadeOut(tween(120))
-          else -> slideOutVertically(
-            animationSpec = IosMotion.SHEET_OFFSET,
-            targetOffsetY = { it }
-          ) + fadeOut(tween(160))
         },
         modifier = Modifier
           .padding(horizontal = 10.dp)

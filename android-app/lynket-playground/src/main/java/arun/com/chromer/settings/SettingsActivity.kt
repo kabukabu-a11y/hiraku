@@ -76,7 +76,6 @@ import arun.com.chromer.history.HistoryStore
 import arun.com.chromer.tabs.TabStore
 import arun.com.chromer.theme.LynketTheme
 import arun.com.chromer.ui.GlassOption
-import arun.com.chromer.ui.rememberAppIcon
 import arun.com.chromer.ui.GlassSelectPopup
 import arun.com.chromer.ui.GlassSelectRow
 import arun.com.chromer.ui.HirakuBottomBar
@@ -605,18 +604,10 @@ fun SettingsScreen(
       )
       "download" -> {
         val providers = CustomTabProviders.findProviders(context)
-        // Each row shows its app's icon on the left (item 77).
-        val options = mutableListOf(
-          GlassOption(label = stringResource(R.string.download_app_system))
-        )
-        for (provider in providers) {
-          options += GlassOption(
-            label = provider.label,
-            iconBitmap = rememberAppIcon(provider.packageName)
-          )
-        }
         GlassSelectPopup(
-          options = options,
+          options = listOf(
+            GlassOption(label = stringResource(R.string.download_app_system))
+          ) + providers.map { GlassOption(label = it.label) },
           selectedIndex = if (downloadApp == null) {
             0
           } else {

@@ -49,7 +49,6 @@ import android.view.MotionEvent
 import android.view.View
 import android.view.WindowManager
 import android.view.animation.Interpolator
-import android.view.animation.OvershootInterpolator
 import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.TextView
@@ -58,8 +57,8 @@ import arun.com.chromer.browser.BrowserActivity
 import arun.com.chromer.customtab.LinkPreferences
 import arun.com.chromer.home.HomeActivity
 import arun.com.chromer.overlay.OverlayService
+import arun.com.chromer.ui.IosSpringInterpolator
 import arun.com.chromer.ui.glassViewColor
-import arun.com.chromer.ui.occInterpolator
 import java.net.HttpURLConnection
 import java.net.URL
 import kotlin.math.abs
@@ -133,6 +132,10 @@ class BubbleService : Service() {
       } else {
         dp(120)
       }
+      // A remembered Y can outlive the screen it was saved on
+      // (rotation, a different device): never let the stack start
+      // outside the display (v2.3.2 item 73).
+      stackBaseY = clampedBaseY(stackBaseY)
     }
     if (bubbles.size >= MAX_BUBBLES) {
       val oldest = bubbles.removeAt(0)
@@ -243,8 +246,10 @@ class BubbleService : Service() {
     setupTouchListener(item)
     bubbles.add(item)
     windowManager.addView(view, params)
-    // Entry animation (v2.3.1 item 60): pop in with a soft spring
-    // instead of appearing instantly.
+    // Entry animation: pop in with an iOS spring curve instead of
+    // appearing instantly (v2.3.2 item 78c; the spec is an
+    // in-between (damping, response) pair in the range of
+    // Glasmio's LiquidMenuMorphMotion springs).
     if (LinkPreferences.getAnimLevel(this) != LinkPreferences.ANIM_OFF) {
       view.scaleX = 0.4f
       view.scaleY = 0.4f
@@ -253,8 +258,8 @@ class BubbleService : Service() {
         .scaleX(1f)
         .scaleY(1f)
         .alpha(1f)
-        .setDuration(280)
-        .setInterpolator(OvershootInterpolator(1.1f))
+        .setDuration(380)
+        .setInterpolator(IosSpringInterpolator(0.7f, 0.4f, 380))
         .start()
     }
     relayoutBubbles()
@@ -397,28 +402,26 @@ class BubbleService : Service() {
           }
           if (moved) {
             showTrash()
-            val metrics = resources.displayMetrics
-            val bubbleCenterX = item.params.x + size / 2
-            val bubbleCenterY = item.params.y + size / 2
-            val trashCenterX = metrics.widthPixels / 2
-            val trashCenterY = metrics.heightPixels - dp(24) - dp(TRASH_SIZE_DP) / 2
-            val distance = hypot(
-              (bubbleCenterX - trashCenterX).toDouble(),
-              (bubbleCenterY - trashCenterY).toDouble()
-            )
-            // Generous hit area (v2.3.1 item 61): the v2.3.0
-            // radius was easy to miss, so the trash rarely fired.
-            setTrashHot(distance <= dp(120), item.view)
+            // Hit test in real screen coordinates (v2.3.2 item
+            // 74): both views report their on-screen location in
+            // the same space, so the test cannot drift. The
+            // v2.3.1 test mixed spaces — the bubble's window
+            // params (origin below the status bar, inside the
+            // overlay area) against a trash center computed from
+            // the full display height — so the effective target
+            // sat a system-bar height away from the visible ✕
+            // and the drop rarely registered as hot.
+            setTrashHot(isOverTrash(item), item.view)
           }
           true
         }
         MotionEvent.ACTION_UP -> {
           handler.removeCallbacks(longPressRunnable)
-          // Capture the hot state BEFORE resetting it: v2.3.0
-          // reset trashHot first, so the drop-on-trash branch
-          // below could never fire and bubbles never deleted
-          // (item 61).
-          val wasHot = trashHot
+          // Recompute the hot state in screen coordinates BEFORE
+          // resetting it: v2.3.0 reset trashHot first, so the
+          // drop-on-trash branch below could never fire and
+          // bubbles never deleted (item 61).
+          val wasHot = isOverTrash(item)
           setTrashHot(false, item.view)
           hideTrash()
           if (longPressed) {
@@ -437,8 +440,11 @@ class BubbleService : Service() {
             val toLeft = bubbleCenterX < screenWidth / 2
             val targetX = if (toLeft) 0 else screenWidth - size
             val index = bubbles.indexOf(item).coerceAtLeast(0)
-            val baseY = if (stackBaseY >= 0) stackBaseY else dp(120)
-            val targetY = baseY + index * (size + dp(8))
+            val baseY = clampedBaseY(
+              if (stackBaseY >= 0) stackBaseY else dp(120)
+            )
+            val targetY = (baseY + index * (size + dp(8)))
+              .coerceAtMost((metrics.heightPixels - size).coerceAtLeast(0))
             if (LinkPreferences.getAnimLevel(this@BubbleService) ==
               LinkPreferences.ANIM_OFF
             ) {
@@ -449,12 +455,14 @@ class BubbleService : Service() {
               } catch (_: Exception) {
               }
             } else {
+              // iOS EjectSpring (0.75, 0.5) from Glasmio's
+              // LiquidMenuMorphMotion (v2.3.2 item 78c).
               animateBubbleTo(
                 item,
                 targetX,
                 targetY,
-                340L,
-                OvershootInterpolator(0.7f)
+                550L,
+                IosSpringInterpolator(0.75f, 0.5f, 550)
               )
             }
             if (LinkPreferences.isBubbleRememberPos(this@BubbleService)) {
@@ -522,15 +530,41 @@ class BubbleService : Service() {
 
   private fun relayoutBubbles() {
     val size = dp(BUBBLE_SIZE_DP)
-    val baseY = if (stackBaseY >= 0) stackBaseY else dp(120)
+    val metrics = resources.displayMetrics
+    val baseY = clampedBaseY(if (stackBaseY >= 0) stackBaseY else dp(120))
+    val maxY = (metrics.heightPixels - size).coerceAtLeast(0)
     val animate = LinkPreferences.getAnimLevel(this) != LinkPreferences.ANIM_OFF
     bubbles.forEachIndexed { index, item ->
-      val targetY = baseY + index * (size + dp(8))
+      // Never fight a running animation (v2.3.2 item 73): the
+      // v2.3.1 relayout replaced the animator of a bubble that
+      // was mid snap-back and froze its X wherever it happened
+      // to be — bubbles ended up stranded mid-screen. A bubble
+      // whose animator is running already has a docked target;
+      // it will land correctly on its own.
+      if (item.animator != null) return@forEachIndexed
+      val targetY = (baseY + index * (size + dp(8))).coerceAtMost(maxY)
+      // Keep the bubble on its docked edge: derive the target X
+      // from the side it currently sits on instead of trusting a
+      // possibly mid-flight params.x.
+      val dockedX = if (item.params.x + size / 2 < metrics.widthPixels / 2) {
+        0
+      } else {
+        metrics.widthPixels - size
+      }
       if (animate) {
         // Slide into the new slot instead of teleporting when a
-        // bubble is added or removed (item 60).
-        animateBubbleTo(item, item.params.x, targetY, 260L, occInterpolator())
+        // bubble is added or removed (item 60), on the iOS
+        // CollapseSpring curve (1, 0.3) from Glasmio's
+        // LiquidMenuMorphMotion (v2.3.2 item 78c).
+        animateBubbleTo(
+          item,
+          dockedX,
+          targetY,
+          400L,
+          IosSpringInterpolator(1f, 0.3f, 400)
+        )
       } else {
+        item.params.x = dockedX
         item.params.y = targetY
         try {
           windowManager.updateViewLayout(item.view, item.params)
@@ -538,6 +572,36 @@ class BubbleService : Service() {
         }
       }
     }
+  }
+
+  /** Keeps the stack's top edge inside the display (item 73). */
+  private fun clampedBaseY(baseY: Int): Int {
+    val size = dp(BUBBLE_SIZE_DP)
+    val maxBase = (resources.displayMetrics.heightPixels - size)
+      .coerceAtLeast(0)
+    return baseY.coerceIn(0, maxBase)
+  }
+
+  /**
+   * Whether the dragged bubble is over the trash target, tested
+   * in real screen coordinates (v2.3.2 item 74): both views are
+   * separate overlay windows, and [View.getLocationOnScreen]
+   * reports both in the one display space, so insets and window
+   * origins cannot skew the test the way the old params-vs-
+   * displayMetrics math did.
+   */
+  private fun isOverTrash(item: BubbleItem): Boolean {
+    val trash = trashView ?: return false
+    if (!isTrashShown) return false
+    val bubbleLoc = IntArray(2)
+    val trashLoc = IntArray(2)
+    item.view.getLocationOnScreen(bubbleLoc)
+    trash.getLocationOnScreen(trashLoc)
+    val bubbleCx = bubbleLoc[0] + dp(BUBBLE_SIZE_DP) / 2.0
+    val bubbleCy = bubbleLoc[1] + dp(BUBBLE_SIZE_DP) / 2.0
+    val trashCx = trashLoc[0] + dp(TRASH_SIZE_DP) / 2.0
+    val trashCy = trashLoc[1] + dp(TRASH_SIZE_DP) / 2.0
+    return hypot(bubbleCx - trashCx, bubbleCy - trashCy) <= dp(140)
   }
 
   /** Highlights the trash target (red + haptic) while a bubble hovers it. */
@@ -672,8 +736,8 @@ class BubbleService : Service() {
         .scaleX(0.3f)
         .scaleY(0.3f)
         .alpha(0f)
-        .setDuration(170)
-        .setInterpolator(occInterpolator())
+        .setDuration(220)
+        .setInterpolator(IosSpringInterpolator(1f, 0.2f, 220))
         .withEndAction {
           try {
             windowManager.removeView(item.view)
