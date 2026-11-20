@@ -50,6 +50,7 @@ import android.provider.Settings
 import android.text.TextUtils
 import android.view.Gravity
 import android.view.KeyEvent
+import android.view.MenuItem
 import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
@@ -63,6 +64,7 @@ import android.webkit.WebViewClient
 import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.LinearLayout
+import android.widget.PopupMenu
 import android.widget.ProgressBar
 import android.widget.TextView
 import android.widget.Toast
@@ -103,9 +105,6 @@ class OverlayService : Service() {
   private var backButton: View? = null
   private var faviconView: ImageView? = null
   private var barTopRow: View? = null
-  private var menuView: View? = null
-  private var menuParams: WindowManager.LayoutParams? = null
-  private var menuContent: LinearLayout? = null
   private var shieldView: TextView? = null
   private var shieldCountView: TextView? = null
   private var progressBar: ProgressBar? = null
@@ -1350,364 +1349,176 @@ class OverlayService : Service() {
     root.requestFocus()
   }
 
-  // ----- v2.3.0: the menu is a glass panel that pops out of the bar -----
-
   private fun showMenu(anchor: View) {
-    hideMenu()
-    val wm = windowManager ?: return
-    val dark = isDarkMode()
-    val content = LinearLayout(this).apply {
-      orientation = LinearLayout.VERTICAL
-      background = GradientDrawable().apply {
-        setColor(glassBarColor())
-        cornerRadius = dp(22).toFloat()
-        setStroke(dp(1), if (dark) 0x38FFFFFF else 0x22000000)
-      }
-      elevation = dp(10).toFloat()
-      setPadding(dp(8), dp(8), dp(8), dp(8))
+    val popup = PopupMenu(this, anchor)
+    val menu = popup.menu
+    val forwardItem = menu.add(0, MENU_FORWARD, 0, getString(R.string.act_forward))
+    forwardItem.isEnabled = webView?.canGoForward() == true
+    menu.add(0, MENU_OPEN_PRIMARY, 1, getString(R.string.overlay_open_primary))
+    menu.add(
+      0,
+      MENU_DESKTOP,
+      2,
+      if (desktopMode) "✓ " + getString(R.string.site_desktop) else getString(R.string.site_desktop)
+    )
+    menu.add(
+      0,
+      MENU_ADBLOCK,
+      3,
+      if (adBlockEnabled) "✓ " + getString(R.string.adblock_title) else getString(R.string.adblock_title)
+    )
+    menu.add(0, MENU_PASSTHROUGH, 4, getString(R.string.overlay_passthrough))
+    menu.add(0, MENU_MINIMIZE, 5, getString(R.string.overlay_minimize))
+    menu.add(0, MENU_FULLSCREEN, 6, getString(R.string.overlay_open_in_app))
+    val aspectSub = menu.addSubMenu(0, MENU_ASPECT, 7, getString(R.string.overlay_aspect))
+    for ((index, pair) in ASPECT_RATIOS.withIndex()) {
+      aspectSub.add(2, MENU_ASPECT_BASE + index, index, pair.first)
     }
-    menuContent = content
-    showMenuPage(MenuPage.MAIN)
-
-    val params = WindowManager.LayoutParams(
-      dp(288),
-      WindowManager.LayoutParams.WRAP_CONTENT,
-      WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
-      WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
-        WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
-        WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH,
-      PixelFormat.TRANSLUCENT
-    ).apply {
-      val barOnTop = LinkPreferences.isBarOnTop(this@OverlayService)
-      gravity = (if (barOnTop) Gravity.TOP else Gravity.BOTTOM) or Gravity.END
-      x = dp(8)
-      y = if (barOnTop) {
-        statusBarHeight() + dp(120)
-      } else {
-        dp(120)
-      }
-      if (LinkPreferences.getAnimLevel(this@OverlayService) != LinkPreferences.ANIM_OFF) {
-        windowAnimations = R.style.OverlayMenuAnim
-      }
-    }
-    val panel = FrameLayout(this).apply {
-      addView(content)
-      setOnTouchListener { _, event ->
-        if (event.actionMasked == MotionEvent.ACTION_OUTSIDE) {
-          hideMenu()
-          true
-        } else {
-          false
-        }
-      }
-    }
-    menuView = panel
-    menuParams = params
-    try {
-      wm.addView(panel, params)
-    } catch (_: Exception) {
-      menuView = null
-      menuParams = null
-      menuContent = null
-    }
-  }
-
-  private fun hideMenu() {
-    val panel = menuView ?: return
-    try {
-      windowManager?.removeView(panel)
-    } catch (_: Exception) {
-    }
-    menuView = null
-    menuParams = null
-    menuContent = null
-  }
-
-  private enum class MenuPage { MAIN, METHODS, ASPECT }
-
-  private fun showMenuPage(page: MenuPage) {
-    val content = menuContent ?: return
-    content.removeAllViews()
-    when (page) {
-      MenuPage.MAIN -> buildMainMenuPage(content)
-      MenuPage.METHODS -> buildMethodsMenuPage(content)
-      MenuPage.ASPECT -> buildAspectMenuPage(content)
-    }
-  }
-
-  private fun menuTextColor(): Int = if (isDarkMode()) Color.WHITE else 0xFF202124.toInt()
-
-  private fun menuRow(
-    iconRes: Int,
-    label: String,
-    enabled: Boolean = true,
-    onClick: () -> Unit
-  ): View {
-    val row = LinearLayout(this).apply {
-      orientation = LinearLayout.HORIZONTAL
-      gravity = Gravity.CENTER_VERTICAL
-      layoutParams = LinearLayout.LayoutParams(
-        ViewGroup.LayoutParams.MATCH_PARENT,
-        dp(48)
-      )
-      setPadding(dp(10), 0, dp(10), 0)
-      alpha = if (enabled) 1f else 0.4f
-      if (enabled) {
-        setOnClickListener { onClick() }
-      }
-    }
-    val icon = ImageView(this).apply {
-      setImageResource(iconRes)
-      layoutParams = LinearLayout.LayoutParams(dp(21), dp(21))
-      if (!isDarkMode()) {
-        setColorFilter(0xFF202124.toInt())
-      }
-    }
-    val text = TextView(this).apply {
-      text = label
-      setTextColor(menuTextColor())
-      textSize = 14f
-      isSingleLine = true
-      ellipsize = TextUtils.TruncateAt.END
-      layoutParams = LinearLayout.LayoutParams(
-        0,
-        ViewGroup.LayoutParams.WRAP_CONTENT,
-        1f
-      ).apply {
-        marginStart = dp(12)
-      }
-    }
-    row.addView(icon)
-    row.addView(text)
-    return row
-  }
-
-  private fun buildMainMenuPage(content: LinearLayout) {
-    val checkSuffix = " ✓"
-    content.addView(
-      menuRow(R.drawable.ic_ov_forward, getString(R.string.act_forward),
-        enabled = webView?.canGoForward() == true) {
-        hideMenu()
-        if (webView?.canGoForward() == true) webView?.goForward()
-      }
-    )
-    content.addView(
-      menuRow(R.drawable.ic_ov_open_external, getString(R.string.overlay_open_primary)) {
-        hideMenu()
-        val url = currentUrl
-        closeOverlay()
-        try {
-          startActivity(
-            LinkHandlerActivity.createDispatchIntent(
-              this,
-              url,
-              OpenMethod.CUSTOM_TAB_PRIMARY,
-              secretSession
-            )
-          )
-        } catch (_: Exception) {
-        }
-      }
-    )
-    content.addView(
-      menuRow(
-        R.drawable.ic_ov_desktop,
-        getString(R.string.site_desktop) + if (desktopMode) checkSuffix else ""
-      ) {
-        desktopMode = !desktopMode
-        LinkPreferences.setDesktopDefault(this, desktopMode)
-        webView?.let { view ->
-          view.settings.userAgentString = if (desktopMode) DESKTOP_UA else null
-          view.settings.useWideViewPort = desktopMode
-          view.reload()
-        }
-        showMenuPage(MenuPage.MAIN)
-      }
-    )
-    content.addView(
-      menuRow(
-        R.drawable.ic_ov_shield,
-        getString(R.string.adblock_title) + if (adBlockEnabled) checkSuffix else ""
-      ) {
-        toggleAdBlock()
-        showMenuPage(MenuPage.MAIN)
-      }
-    )
-    content.addView(
-      menuRow(R.drawable.ic_ov_passthrough, getString(R.string.overlay_passthrough)) {
-        hideMenu()
-        enterPassthrough()
-      }
-    )
-    content.addView(
-      menuRow(R.drawable.ic_ov_other, getString(R.string.menu_other_methods)) {
-        showMenuPage(MenuPage.METHODS)
-      }
-    )
-    content.addView(
-      menuRow(R.drawable.ic_ov_aspect, getString(R.string.overlay_aspect)) {
-        showMenuPage(MenuPage.ASPECT)
-      }
-    )
-    content.addView(
-      menuRow(R.drawable.ic_ov_copy, getString(R.string.menu_copy_link)) {
-        hideMenu()
-        try {
-          val clipboard = getSystemService(CLIPBOARD_SERVICE) as ClipboardManager
-          clipboard.setPrimaryClip(ClipData.newPlainText("URL", currentUrl))
-          Toast.makeText(this, getString(R.string.link_copied), Toast.LENGTH_SHORT).show()
-        } catch (_: Exception) {
-        }
-      }
-    )
-    content.addView(
-      menuRow(R.drawable.ic_ov_find, getString(R.string.overlay_find)) {
-        hideMenu()
-        showFindBar()
-      }
-    )
-    content.addView(
-      menuRow(R.drawable.ic_ov_screenshot, getString(R.string.overlay_screenshot)) {
-        hideMenu()
-        webView?.let { view ->
-          arun.com.chromer.browser.ScreenshotShare.captureAndShare(this, view)
-        }
-      }
-    )
-
-    // Bottom round icon row: share / bookmark / history / settings.
-    val iconRow = LinearLayout(this).apply {
-      orientation = LinearLayout.HORIZONTAL
-      layoutParams = LinearLayout.LayoutParams(
-        ViewGroup.LayoutParams.MATCH_PARENT,
-        ViewGroup.LayoutParams.WRAP_CONTENT
-      ).apply {
-        topMargin = dp(6)
-      }
-    }
-    iconRow.addView(
-      menuRoundButton(R.drawable.ic_ov_share_nodes, getString(R.string.overlay_share_row)) {
-        hideMenu()
-        LinkDispatcher.share(this, currentUrl)
-      }
-    )
-    iconRow.addView(
-      menuRoundButton(R.drawable.ic_ov_bookmark, getString(R.string.overlay_bookmark)) {
-        ReadLaterStore.add(
-          this,
-          currentUrl,
-          titleView?.text?.toString() ?: currentUrl
-        )
-        Toast.makeText(this, getString(R.string.read_later_added), Toast.LENGTH_SHORT).show()
-        hideMenu()
-      }
-    )
-    iconRow.addView(
-      menuRoundButton(R.drawable.ic_ov_history, getString(R.string.overlay_history)) {
-        hideMenu()
-        try {
-          startActivity(
-            Intent(this, HistoryActivity::class.java)
-              .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-          )
-        } catch (_: Exception) {
-        }
-      }
-    )
-    iconRow.addView(
-      menuRoundButton(R.drawable.ic_ov_settings, getString(R.string.overlay_settings)) {
-        hideMenu()
-        try {
-          startActivity(
-            Intent(this, SettingsActivity::class.java)
-              .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-          )
-        } catch (_: Exception) {
-        }
-      }
-    )
-    content.addView(iconRow)
-  }
-
-  private fun menuRoundButton(iconRes: Int, label: String, onClick: () -> Unit): View {
-    val cell = LinearLayout(this).apply {
-      orientation = LinearLayout.VERTICAL
-      gravity = Gravity.CENTER
-      layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
-      setPadding(0, dp(4), 0, dp(2))
-      setOnClickListener { onClick() }
-    }
-    val circle = FrameLayout(this).apply {
-      background = GradientDrawable().apply {
-        shape = GradientDrawable.OVAL
-        setColor(if (isDarkMode()) 0x26FFFFFF else 0x14000000)
-        setStroke(dp(1), if (isDarkMode()) 0x30FFFFFF else 0x1A000000)
-      }
-      layoutParams = LinearLayout.LayoutParams(dp(44), dp(44))
-    }
-    val icon = ImageView(this).apply {
-      setImageResource(iconRes)
-      layoutParams = FrameLayout.LayoutParams(dp(21), dp(21)).apply {
-        gravity = Gravity.CENTER
-      }
-      if (!isDarkMode()) {
-        setColorFilter(0xFF202124.toInt())
-      }
-    }
-    circle.addView(icon)
-    val text = TextView(this).apply {
-      text = label
-      setTextColor(menuTextColor())
-      textSize = 9f
-      gravity = Gravity.CENTER
-    }
-    cell.addView(circle)
-    cell.addView(text)
-    return cell
-  }
-
-  private fun buildMethodsMenuPage(content: LinearLayout) {
-    content.addView(
-      menuRow(R.drawable.ic_ov_back, getString(R.string.act_back)) {
-        showMenuPage(MenuPage.MAIN)
-      }
-    )
+    aspectSub.add(2, MENU_ASPECT_FULL, ASPECT_RATIOS.size, getString(R.string.aspect_full))
+    val sub = menu.addSubMenu(0, MENU_OTHER_METHODS, 8, getString(R.string.menu_other_methods))
+    // Same customized list as the chooser screens, minus the methods
+    // that make no sense from inside the overlay itself. Labels use
+    // the actual browser names (v2.1.0).
     val methods = LinkPreferences.getChooserMethods(this)
       .filter { it != OpenMethod.STAY_OVERLAY && it != OpenMethod.CANCEL }
-    for (method in methods) {
-      content.addView(
-        menuRow(R.drawable.ic_ov_globe, method.displayLabel(this)) {
-          hideMenu()
-          val url = currentUrl
-          if (method != OpenMethod.SHARE) {
-            closeOverlay()
-          }
-          LinkDispatcher.open(this, url, method, secretSession)
-        }
-      )
+    for ((index, method) in methods.withIndex()) {
+      sub.add(1, MENU_METHOD_BASE + index, index, method.displayLabel(this))
     }
-  }
+    menu.add(0, MENU_COPY, 9, getString(R.string.menu_copy_link))
+    menu.add(0, MENU_SHARE, 10, getString(R.string.act_share))
+    menu.add(0, MENU_SETTINGS, 11, getString(R.string.overlay_settings))
+    menu.add(0, MENU_FIND, 12, getString(R.string.overlay_find))
+    menu.add(0, MENU_READ_LATER, 13, getString(R.string.overlay_read_later))
+    menu.add(0, MENU_SCREENSHOT, 14, getString(R.string.overlay_screenshot))
 
-  private fun buildAspectMenuPage(content: LinearLayout) {
-    content.addView(
-      menuRow(R.drawable.ic_ov_back, getString(R.string.act_back)) {
-        showMenuPage(MenuPage.MAIN)
-      }
-    )
-    for ((label, ratio) in ASPECT_RATIOS) {
-      content.addView(
-        menuRow(R.drawable.ic_ov_aspect, label) {
-          hideMenu()
-          applyAspect(ratio)
+    popup.setOnMenuItemClickListener { item: MenuItem ->
+      when {
+        item.itemId == MENU_ASPECT_FULL -> {
+          resetGeometry()
+          true
         }
-      )
-    }
-    content.addView(
-      menuRow(R.drawable.ic_ov_expand, getString(R.string.aspect_full)) {
-        hideMenu()
-        resetGeometry()
+        item.itemId >= MENU_ASPECT_BASE -> {
+          val ratio = ASPECT_RATIOS.getOrNull(item.itemId - MENU_ASPECT_BASE)?.second
+          if (ratio != null) {
+            applyAspect(ratio)
+          }
+          true
+        }
+        item.itemId >= MENU_METHOD_BASE -> {
+          val method = methods.getOrNull(item.itemId - MENU_METHOD_BASE)
+          if (method != null) {
+            val url = currentUrl
+            if (method != OpenMethod.SHARE) {
+              closeOverlay()
+            }
+            LinkDispatcher.open(this, url, method, secretSession)
+          }
+          true
+        }
+        item.itemId == MENU_FORWARD -> {
+          if (webView?.canGoForward() == true) webView?.goForward()
+          true
+        }
+        item.itemId == MENU_OPEN_PRIMARY -> {
+          // Route through the handler activity so the chosen browser
+          // opens as a real Custom Tab (needs an activity context).
+          val url = currentUrl
+          closeOverlay()
+          try {
+            startActivity(
+              LinkHandlerActivity.createDispatchIntent(
+                this,
+                url,
+                OpenMethod.CUSTOM_TAB_PRIMARY,
+                secretSession
+              )
+            )
+          } catch (_: Exception) {
+          }
+          true
+        }
+        item.itemId == MENU_DESKTOP -> {
+          desktopMode = !desktopMode
+          LinkPreferences.setDesktopDefault(this@OverlayService, desktopMode)
+          webView?.let { view ->
+            view.settings.userAgentString = if (desktopMode) DESKTOP_UA else null
+            view.settings.useWideViewPort = desktopMode
+            view.reload()
+          }
+          true
+        }
+        item.itemId == MENU_FIND -> {
+          showFindBar()
+          true
+        }
+        item.itemId == MENU_READ_LATER -> {
+          arun.com.chromer.readlater.ReadLaterStore.add(
+            this@OverlayService,
+            currentUrl,
+            titleView?.text?.toString() ?: currentUrl
+          )
+          Toast.makeText(
+            this@OverlayService,
+            getString(R.string.read_later_added),
+            Toast.LENGTH_SHORT
+          ).show()
+          true
+        }
+        item.itemId == MENU_SCREENSHOT -> {
+          webView?.let { view ->
+            arun.com.chromer.browser.ScreenshotShare.captureAndShare(
+              this@OverlayService,
+              view
+            )
+          }
+          true
+        }
+        item.itemId == MENU_ADBLOCK -> {
+          toggleAdBlock()
+          true
+        }
+        item.itemId == MENU_PASSTHROUGH -> {
+          enterPassthrough()
+          true
+        }
+        item.itemId == MENU_MINIMIZE -> {
+          toggleMinimize()
+          true
+        }
+        item.itemId == MENU_FULLSCREEN -> {
+          val url = currentUrl
+          val secret = secretSession
+          closeOverlay()
+          LinkDispatcher.openInApp(this, url, secret)
+          true
+        }
+        item.itemId == MENU_COPY -> {
+          try {
+            val clipboard = getSystemService(CLIPBOARD_SERVICE) as ClipboardManager
+            clipboard.setPrimaryClip(ClipData.newPlainText("URL", currentUrl))
+            Toast.makeText(this, getString(R.string.link_copied), Toast.LENGTH_SHORT).show()
+          } catch (_: Exception) {
+          }
+          true
+        }
+        item.itemId == MENU_SHARE -> {
+          LinkDispatcher.share(this, currentUrl)
+          true
+        }
+        item.itemId == MENU_SETTINGS -> {
+          try {
+            startActivity(
+              Intent(this, SettingsActivity::class.java)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            )
+          } catch (_: Exception) {
+          }
+          true
+        }
+        else -> false
       }
-    )
+    }
+    popup.show()
   }
 
   private fun updateNavigationButtons(view: WebView?) {
@@ -1729,7 +1540,6 @@ class OverlayService : Service() {
   }
 
   private fun cleanup() {
-    hideMenu()
     removeCatcher()
     findBarView?.let { bar ->
       try {
