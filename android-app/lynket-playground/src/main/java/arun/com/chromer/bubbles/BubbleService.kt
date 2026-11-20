@@ -171,6 +171,12 @@ class BubbleService : Service() {
       typeface = Typeface.DEFAULT_BOLD
       textSize = 10f
       text = letter
+      layoutParams = FrameLayout.LayoutParams(
+        FrameLayout.LayoutParams.WRAP_CONTENT,
+        FrameLayout.LayoutParams.WRAP_CONTENT
+      ).apply {
+        gravity = Gravity.CENTER
+      }
     }
     val badgeImage = ImageView(this).apply {
       scaleType = ImageView.ScaleType.CENTER_CROP
