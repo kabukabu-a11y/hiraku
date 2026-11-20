@@ -18,7 +18,11 @@
  *  along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 pluginManagement {
-  includeBuild "build-logic"
+  // build-logic is no longer included as a plugin source: its
+  // convention plugins only served the (excluded) :lynket library
+  // module, and its pinned binary-compatibility-validator 0.6.0
+  // cannot be configured on Gradle 9 (JavaPluginConvention was
+  // removed). The playground module uses catalog plugins only.
   repositories {
     google {
       content {
