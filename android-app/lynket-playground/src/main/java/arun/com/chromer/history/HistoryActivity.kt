@@ -20,12 +20,14 @@
 
 package arun.com.chromer.history
 
+import android.app.Activity
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -60,6 +62,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import arun.com.chromer.browser.BrowserActivity
 import arun.com.chromer.theme.LynketTheme
+import arun.com.chromer.ui.HirakuBottomBar
+import arun.com.chromer.ui.openHomeTab
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -78,6 +82,47 @@ class HistoryActivity : ComponentActivity() {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun HistoryScreen(onBack: () -> Unit) {
+  val context = LocalContext.current
+  Scaffold(
+    topBar = {
+      TopAppBar(
+        title = { Text(stringResource(R.string.history_title)) },
+        navigationIcon = {
+          IconButton(onClick = onBack) {
+            Icon(Icons.Filled.ArrowBack, contentDescription = stringResource(R.string.act_back))
+          }
+        }
+      )
+    },
+    bottomBar = {
+      HirakuBottomBar(
+        selectedIndex = 2,
+        onSelect = { index ->
+          if (index != 2) {
+            openHomeTab(context, index)
+            (context as? Activity)?.finish()
+          }
+        }
+      )
+    }
+  ) { padding ->
+    Box(
+      modifier = Modifier
+        .fillMaxSize()
+        .padding(padding)
+    ) {
+      HistoryList()
+    }
+  }
+}
+
+/**
+ * The history list itself, shared between the standalone screen and
+ * the main screen's History tab (v2.3.0). Bottom content padding
+ * keeps the last rows clear of the floating bottom bar.
+ */
+@Composable
+fun HistoryList() {
   val context = LocalContext.current
   var entries by remember { mutableStateOf(HistoryStore.getAll(context)) }
   var query by remember { mutableStateOf("") }
@@ -99,84 +144,10 @@ private fun HistoryScreen(onBack: () -> Unit) {
     entries = HistoryStore.getAll(context)
   }
 
-  Scaffold(
-    topBar = {
-      TopAppBar(
-        title = { Text(stringResource(R.string.history_title)) },
-        navigationIcon = {
-          IconButton(onClick = onBack) {
-            Icon(Icons.Filled.ArrowBack, contentDescription = stringResource(R.string.act_back))
-          }
-        },
-        actions = {
-          Box {
-            IconButton(
-              onClick = { periodMenu = true },
-              enabled = entries.isNotEmpty()
-            ) {
-              Icon(
-                Icons.Filled.MoreVert,
-                contentDescription = stringResource(R.string.history_delete_period)
-              )
-            }
-            DropdownMenu(
-              expanded = periodMenu,
-              onDismissRequest = { periodMenu = false }
-            ) {
-              DropdownMenuItem(
-                text = { Text(stringResource(R.string.history_delete_hour)) },
-                onClick = {
-                  periodMenu = false
-                  HistoryStore.deleteVisitedAfter(
-                    context,
-                    System.currentTimeMillis() - 60 * 60 * 1000L
-                  )
-                  refresh()
-                }
-              )
-              DropdownMenuItem(
-                text = { Text(stringResource(R.string.history_delete_today)) },
-                onClick = {
-                  periodMenu = false
-                  val cal = java.util.Calendar.getInstance().apply {
-                    set(java.util.Calendar.HOUR_OF_DAY, 0)
-                    set(java.util.Calendar.MINUTE, 0)
-                    set(java.util.Calendar.SECOND, 0)
-                    set(java.util.Calendar.MILLISECOND, 0)
-                  }
-                  HistoryStore.deleteVisitedAfter(context, cal.timeInMillis)
-                  refresh()
-                }
-              )
-              DropdownMenuItem(
-                text = { Text(stringResource(R.string.history_delete_week)) },
-                onClick = {
-                  periodMenu = false
-                  HistoryStore.deleteVisitedAfter(
-                    context,
-                    System.currentTimeMillis() - 7 * 24 * 60 * 60 * 1000L
-                  )
-                  refresh()
-                }
-              )
-              DropdownMenuItem(
-                text = { Text(stringResource(R.string.history_delete_all)) },
-                onClick = {
-                  periodMenu = false
-                  HistoryStore.clear(context)
-                  refresh()
-                }
-              )
-            }
-          }
-        }
-      )
-    }
-  ) { padding ->
-    Column(
-      modifier = Modifier
-        .fillMaxSize()
-        .padding(padding)
+  Column(modifier = Modifier.fillMaxSize()) {
+    Row(
+      verticalAlignment = Alignment.CenterVertically,
+      modifier = Modifier.fillMaxWidth()
     ) {
       OutlinedTextField(
         value = query,
@@ -184,40 +155,105 @@ private fun HistoryScreen(onBack: () -> Unit) {
         label = { Text(stringResource(R.string.history_search_hint)) },
         singleLine = true,
         modifier = Modifier
-          .fillMaxWidth()
+          .weight(1f)
           .padding(horizontal = 16.dp, vertical = 8.dp)
       )
-      if (filtered.isEmpty()) {
-        Box(
-          modifier = Modifier.fillMaxSize(),
-          contentAlignment = Alignment.Center
+      Box {
+        IconButton(
+          onClick = { periodMenu = true },
+          enabled = entries.isNotEmpty()
         ) {
-          Text(
-            text = stringResource(
-              if (entries.isEmpty()) {
-                R.string.history_empty
-              } else {
-                R.string.history_no_results
-              }
-            ),
-            color = MaterialTheme.colorScheme.onSurfaceVariant
+          Icon(
+            Icons.Filled.MoreVert,
+            contentDescription = stringResource(R.string.history_delete_period)
           )
         }
-      } else {
-        LazyColumn(modifier = Modifier.fillMaxSize()) {
-          items(filtered, key = { it.url + "@" + it.visitedAt }) { entry ->
-            HistoryRow(
-              entry = entry,
-              dateFormat = dateFormat,
-              onOpen = {
-                context.startActivity(BrowserActivity.createDirectIntent(context, entry.url))
-              },
-              onDelete = {
-                HistoryStore.remove(context, entry)
-                refresh()
+        DropdownMenu(
+          expanded = periodMenu,
+          onDismissRequest = { periodMenu = false }
+        ) {
+          DropdownMenuItem(
+            text = { Text(stringResource(R.string.history_delete_hour)) },
+            onClick = {
+              periodMenu = false
+              HistoryStore.deleteVisitedAfter(
+                context,
+                System.currentTimeMillis() - 60 * 60 * 1000L
+              )
+              refresh()
+            }
+          )
+          DropdownMenuItem(
+            text = { Text(stringResource(R.string.history_delete_today)) },
+            onClick = {
+              periodMenu = false
+              val cal = java.util.Calendar.getInstance().apply {
+                set(java.util.Calendar.HOUR_OF_DAY, 0)
+                set(java.util.Calendar.MINUTE, 0)
+                set(java.util.Calendar.SECOND, 0)
+                set(java.util.Calendar.MILLISECOND, 0)
               }
-            )
-          }
+              HistoryStore.deleteVisitedAfter(context, cal.timeInMillis)
+              refresh()
+            }
+          )
+          DropdownMenuItem(
+            text = { Text(stringResource(R.string.history_delete_week)) },
+            onClick = {
+              periodMenu = false
+              HistoryStore.deleteVisitedAfter(
+                context,
+                System.currentTimeMillis() - 7 * 24 * 60 * 60 * 1000L
+              )
+              refresh()
+            }
+          )
+          DropdownMenuItem(
+            text = { Text(stringResource(R.string.history_delete_all)) },
+            onClick = {
+              periodMenu = false
+              HistoryStore.clear(context)
+              refresh()
+            }
+          )
+        }
+      }
+    }
+    if (filtered.isEmpty()) {
+      Box(
+        modifier = Modifier
+          .fillMaxSize()
+          .padding(bottom = 96.dp),
+        contentAlignment = Alignment.Center
+      ) {
+        Text(
+          text = stringResource(
+            if (entries.isEmpty()) {
+              R.string.history_empty
+            } else {
+              R.string.history_no_results
+            }
+          ),
+          color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+      }
+    } else {
+      LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(bottom = 96.dp)
+      ) {
+        items(filtered, key = { it.url + "@" + it.visitedAt }) { entry ->
+          HistoryRow(
+            entry = entry,
+            dateFormat = dateFormat,
+            onOpen = {
+              context.startActivity(BrowserActivity.createDirectIntent(context, entry.url))
+            },
+            onDelete = {
+              HistoryStore.remove(context, entry)
+              refresh()
+            }
+          )
         }
       }
     }
@@ -262,4 +298,3 @@ private fun HistoryRow(
     }
   }
 }
-

@@ -20,12 +20,14 @@
 
 package arun.com.chromer.readlater
 
+import android.app.Activity
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -57,11 +59,13 @@ import androidx.compose.ui.unit.dp
 import arun.com.chromer.R
 import arun.com.chromer.browser.BrowserActivity
 import arun.com.chromer.theme.LynketTheme
+import arun.com.chromer.ui.HirakuBottomBar
+import arun.com.chromer.ui.openHomeTab
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
-/** The "read later" list (v2.2.0). */
+/** The "read later" list (v2.2.0), also the Bookmarks tab (v2.3.0). */
 class ReadLaterActivity : ComponentActivity() {
   override fun onCreate(savedInstanceState: Bundle?) {
     super.onCreate(savedInstanceState)
@@ -77,9 +81,6 @@ class ReadLaterActivity : ComponentActivity() {
 @Composable
 private fun ReadLaterScreen(onBack: () -> Unit) {
   val context = LocalContext.current
-  var entries by remember { mutableStateOf(ReadLaterStore.getAll(context)) }
-  val dateFormat = remember { SimpleDateFormat("yyyy/MM/dd HH:mm", Locale.JAPAN) }
-
   Scaffold(
     topBar = {
       TopAppBar(
@@ -88,26 +89,64 @@ private fun ReadLaterScreen(onBack: () -> Unit) {
           IconButton(onClick = onBack) {
             Icon(Icons.Filled.ArrowBack, contentDescription = stringResource(R.string.act_back))
           }
-        },
-        actions = {
-          TextButton(
-            onClick = {
-              ReadLaterStore.clear(context)
-              entries = emptyList()
-            },
-            enabled = entries.isNotEmpty()
-          ) {
-            Text(stringResource(R.string.read_later_clear_all))
+        }
+      )
+    },
+    bottomBar = {
+      HirakuBottomBar(
+        selectedIndex = 2,
+        onSelect = { index ->
+          if (index != 2) {
+            openHomeTab(context, index)
+            (context as? Activity)?.finish()
           }
         }
       )
     }
   ) { padding ->
+    Box(
+      modifier = Modifier
+        .fillMaxSize()
+        .padding(padding)
+    ) {
+      ReadLaterList()
+    }
+  }
+}
+
+/**
+ * The read-later / bookmarks list, shared between the standalone
+ * screen and the main screen's History tab (v2.3.0).
+ */
+@Composable
+fun ReadLaterList() {
+  val context = LocalContext.current
+  var entries by remember { mutableStateOf(ReadLaterStore.getAll(context)) }
+  val dateFormat = remember { SimpleDateFormat("yyyy/MM/dd HH:mm", Locale.JAPAN) }
+
+  Column(modifier = Modifier.fillMaxSize()) {
+    Row(
+      modifier = Modifier
+        .fillMaxWidth()
+        .padding(horizontal = 8.dp),
+      verticalAlignment = Alignment.CenterVertically
+    ) {
+      Box(modifier = Modifier.weight(1f))
+      TextButton(
+        onClick = {
+          ReadLaterStore.clear(context)
+          entries = emptyList()
+        },
+        enabled = entries.isNotEmpty()
+      ) {
+        Text(stringResource(R.string.read_later_clear_all))
+      }
+    }
     if (entries.isEmpty()) {
       Box(
         modifier = Modifier
           .fillMaxSize()
-          .padding(padding),
+          .padding(bottom = 96.dp),
         contentAlignment = Alignment.Center
       ) {
         Text(
@@ -117,9 +156,8 @@ private fun ReadLaterScreen(onBack: () -> Unit) {
       }
     } else {
       LazyColumn(
-        modifier = Modifier
-          .fillMaxSize()
-          .padding(padding)
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(bottom = 96.dp)
       ) {
         items(entries, key = { it.url + "@" + it.savedAt }) { entry ->
           Row(

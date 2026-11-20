@@ -20,6 +20,7 @@
 
 package arun.com.chromer.apps
 
+import android.app.Activity
 import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.Canvas
@@ -29,7 +30,9 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -75,10 +78,12 @@ import arun.com.chromer.customtab.LinkPreferences
 import arun.com.chromer.customtab.OpenMethod
 import arun.com.chromer.customtab.displayLabel
 import arun.com.chromer.theme.LynketTheme
+import arun.com.chromer.ui.HirakuBottomBar
+import arun.com.chromer.ui.openHomeTab
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
-private data class InstalledApp(
+data class InstalledApp(
   val packageName: String,
   val label: String,
   val icon: ImageBitmap?
@@ -119,6 +124,56 @@ class AppRulesActivity : ComponentActivity() {
 @Composable
 private fun AppRulesScreen(mode: String, onBack: () -> Unit) {
   val context = LocalContext.current
+  Scaffold(
+    topBar = {
+      TopAppBar(
+        title = {
+          Text(
+            stringResource(
+              when (mode) {
+                AppRulesActivity.MODE_SECRET -> R.string.secret_apps_title
+                AppRulesActivity.MODE_SHARE -> R.string.share_targets_title
+                else -> R.string.app_rules_title
+              }
+            )
+          )
+        },
+        navigationIcon = {
+          IconButton(onClick = onBack) {
+            Icon(Icons.Filled.ArrowBack, contentDescription = stringResource(R.string.act_back))
+          }
+        }
+      )
+    },
+    bottomBar = {
+      HirakuBottomBar(
+        selectedIndex = 1,
+        onSelect = { index ->
+          if (index != 1) {
+            openHomeTab(context, index)
+            (context as? Activity)?.finish()
+          }
+        }
+      )
+    }
+  ) { innerPadding ->
+    Box(
+      modifier = Modifier
+        .fillMaxSize()
+        .padding(innerPadding)
+    ) {
+      AppRulesBody(mode = mode)
+    }
+  }
+}
+
+/**
+ * The app list with search and per-mode editing, shared between the
+ * standalone screen and the main screen's Apps tab (v2.3.0).
+ */
+@Composable
+fun AppRulesBody(mode: String) {
+  val context = LocalContext.current
   // Loading the app list (PackageManager query + icon rasterizing)
   // used to run on the main thread during the first composition,
   // which made this screen stutter on open. It now loads on IO and
@@ -148,150 +203,127 @@ private fun AppRulesScreen(mode: String, onBack: () -> Unit) {
     }
   }
 
-  Scaffold(
-    topBar = {
-      TopAppBar(
-        title = {
-          Text(
-            stringResource(
-              when (mode) {
-                AppRulesActivity.MODE_SECRET -> R.string.secret_apps_title
-                AppRulesActivity.MODE_SHARE -> R.string.share_targets_title
-                else -> R.string.app_rules_title
-              }
-            )
-          )
-        },
-        navigationIcon = {
-          IconButton(onClick = onBack) {
-            Icon(Icons.Filled.ArrowBack, contentDescription = stringResource(R.string.act_back))
-          }
-        }
-      )
-    }
-  ) { innerPadding ->
-    Column(
+  Column(modifier = Modifier.fillMaxSize()) {
+    OutlinedTextField(
+      value = query,
+      onValueChange = { query = it },
+      label = { Text(stringResource(R.string.app_rules_search)) },
+      leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) },
+      singleLine = true,
       modifier = Modifier
-        .fillMaxSize()
-        .padding(innerPadding)
-    ) {
-      OutlinedTextField(
-        value = query,
-        onValueChange = { query = it },
-        label = { Text(stringResource(R.string.app_rules_search)) },
-        leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) },
-        singleLine = true,
+        .fillMaxWidth()
+        .padding(16.dp)
+    )
+    Text(
+      text = when (mode) {
+        AppRulesActivity.MODE_SECRET -> stringResource(R.string.secret_apps_desc) +
+          "\n" + stringResource(R.string.secret_note)
+        AppRulesActivity.MODE_SHARE -> stringResource(
+          R.string.settings_share_targets_desc
+        )
+        else -> stringResource(
+          R.string.app_rules_default_note,
+          defaultMethod.displayLabel(context)
+        )
+      },
+      style = MaterialTheme.typography.bodySmall,
+      color = MaterialTheme.colorScheme.onSurfaceVariant,
+      modifier = Modifier.padding(horizontal = 16.dp)
+    )
+    if (loading) {
+      Column(
         modifier = Modifier
-          .fillMaxWidth()
-          .padding(16.dp)
-      )
-      Text(
-        text = when (mode) {
-          AppRulesActivity.MODE_SECRET -> stringResource(R.string.secret_apps_desc)
-          AppRulesActivity.MODE_SHARE -> stringResource(
-            R.string.settings_share_targets_desc
-          )
-          else -> stringResource(
-            R.string.app_rules_default_note,
-            defaultMethod.displayLabel(context)
-          )
-        },
-        style = MaterialTheme.typography.bodySmall,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-        modifier = Modifier.padding(horizontal = 16.dp)
-      )
-      if (loading) {
-        Column(
-          modifier = Modifier
-            .fillMaxSize()
-            .padding(32.dp),
-          horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-          CircularProgressIndicator()
-        }
+          .fillMaxSize()
+          .padding(32.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+      ) {
+        CircularProgressIndicator()
       }
-      LazyColumn(modifier = Modifier.fillMaxSize()) {
-        items(filtered, key = { it.packageName }) { app ->
-          val rule = rules[app.packageName]
-          val isSecret = app.packageName in secretApps
-          val isShareTarget = app.packageName in shareTargets
-          Row(
-            modifier = Modifier
-              .fillMaxWidth()
-              .clickable {
-                when (mode) {
-                  AppRulesActivity.MODE_SECRET -> {
-                    val newValue = !isSecret
-                    LinkPreferences.setAppSecret(context, app.packageName, newValue)
-                    secretApps = LinkPreferences.getSecretApps(context)
-                  }
-                  AppRulesActivity.MODE_SHARE -> {
-                    if (isShareTarget) {
-                      val updated = shareTargets - app.packageName
-                      LinkPreferences.setShareTargets(context, updated)
-                      shareTargets = updated
-                    } else if (shareTargets.size >= LinkPreferences.MAX_SHARE_TARGETS) {
-                      Toast.makeText(
-                        context,
-                        context.getString(R.string.share_max),
-                        Toast.LENGTH_SHORT
-                      ).show()
-                    } else {
-                      val updated = shareTargets + app.packageName
-                      LinkPreferences.setShareTargets(context, updated)
-                      shareTargets = updated
-                    }
-                  }
-                  else -> editingApp = app
+    }
+    LazyColumn(
+      modifier = Modifier.fillMaxSize(),
+      contentPadding = PaddingValues(bottom = 96.dp)
+    ) {
+      items(filtered, key = { it.packageName }) { app ->
+        val rule = rules[app.packageName]
+        val isSecret = app.packageName in secretApps
+        val isShareTarget = app.packageName in shareTargets
+        Row(
+          modifier = Modifier
+            .fillMaxWidth()
+            .clickable {
+              when (mode) {
+                AppRulesActivity.MODE_SECRET -> {
+                  val newValue = !isSecret
+                  LinkPreferences.setAppSecret(context, app.packageName, newValue)
+                  secretApps = LinkPreferences.getSecretApps(context)
                 }
-              }
-              .padding(horizontal = 16.dp, vertical = 10.dp),
-            verticalAlignment = Alignment.CenterVertically
-          ) {
-            if (app.icon != null) {
-              Image(
-                bitmap = app.icon,
-                contentDescription = null,
-                modifier = Modifier.size(40.dp)
-              )
-            }
-            Spacer(modifier = Modifier.width(12.dp))
-            Column(modifier = Modifier.weight(1f)) {
-              Text(
-                text = app.label,
-                style = MaterialTheme.typography.bodyLarge,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-              )
-              if (mode == AppRulesActivity.MODE_RULES) {
-                Text(
-                  text = rule?.let { it.displayLabel(context) }
-                    ?: stringResource(R.string.app_rules_default_badge),
-                  style = MaterialTheme.typography.bodySmall,
-                  color = if (rule != null) {
-                    MaterialTheme.colorScheme.primary
+                AppRulesActivity.MODE_SHARE -> {
+                  if (isShareTarget) {
+                    val updated = shareTargets - app.packageName
+                    LinkPreferences.setShareTargets(context, updated)
+                    shareTargets = updated
+                  } else if (shareTargets.size >= LinkPreferences.MAX_SHARE_TARGETS) {
+                    Toast.makeText(
+                      context,
+                      context.getString(R.string.share_max),
+                      Toast.LENGTH_SHORT
+                    ).show()
                   } else {
-                    MaterialTheme.colorScheme.onSurfaceVariant
+                    val updated = shareTargets + app.packageName
+                    LinkPreferences.setShareTargets(context, updated)
+                    shareTargets = updated
                   }
-                )
+                }
+                else -> editingApp = app
               }
             }
-            when (mode) {
-              AppRulesActivity.MODE_SECRET -> {
-                Switch(
-                  checked = isSecret,
-                  onCheckedChange = { newValue ->
-                    LinkPreferences.setAppSecret(context, app.packageName, newValue)
-                    secretApps = LinkPreferences.getSecretApps(context)
-                  }
-                )
-              }
-              AppRulesActivity.MODE_SHARE -> {
-                Checkbox(
-                  checked = isShareTarget,
-                  onCheckedChange = null
-                )
-              }
+            .padding(horizontal = 16.dp, vertical = 10.dp),
+          verticalAlignment = Alignment.CenterVertically
+        ) {
+          if (app.icon != null) {
+            Image(
+              bitmap = app.icon,
+              contentDescription = null,
+              modifier = Modifier.size(40.dp)
+            )
+          }
+          Spacer(modifier = Modifier.width(12.dp))
+          Column(modifier = Modifier.weight(1f)) {
+            Text(
+              text = app.label,
+              style = MaterialTheme.typography.bodyLarge,
+              maxLines = 1,
+              overflow = TextOverflow.Ellipsis
+            )
+            if (mode == AppRulesActivity.MODE_RULES) {
+              Text(
+                text = rule?.let { it.displayLabel(context) }
+                  ?: stringResource(R.string.app_rules_default_badge),
+                style = MaterialTheme.typography.bodySmall,
+                color = if (rule != null) {
+                  MaterialTheme.colorScheme.primary
+                } else {
+                  MaterialTheme.colorScheme.onSurfaceVariant
+                }
+              )
+            }
+          }
+          when (mode) {
+            AppRulesActivity.MODE_SECRET -> {
+              Switch(
+                checked = isSecret,
+                onCheckedChange = { newValue ->
+                  LinkPreferences.setAppSecret(context, app.packageName, newValue)
+                  secretApps = LinkPreferences.getSecretApps(context)
+                }
+              )
+            }
+            AppRulesActivity.MODE_SHARE -> {
+              Checkbox(
+                checked = isShareTarget,
+                onCheckedChange = null
+              )
             }
           }
         }
@@ -358,7 +390,7 @@ private fun MethodChoiceRow(
   }
 }
 
-private fun loadInstalledApps(context: android.content.Context): List<InstalledApp> {
+fun loadInstalledApps(context: android.content.Context): List<InstalledApp> {
   val packageManager = context.packageManager
   val intent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
   val resolved = try {

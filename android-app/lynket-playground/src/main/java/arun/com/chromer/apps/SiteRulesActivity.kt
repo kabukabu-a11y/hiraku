@@ -20,6 +20,7 @@
 
 package arun.com.chromer.apps
 
+import android.app.Activity
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -27,6 +28,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -66,6 +68,8 @@ import arun.com.chromer.customtab.LinkPreferences
 import arun.com.chromer.customtab.OpenMethod
 import arun.com.chromer.customtab.displayLabel
 import arun.com.chromer.theme.LynketTheme
+import arun.com.chromer.ui.HirakuBottomBar
+import arun.com.chromer.ui.openHomeTab
 
 /**
  * Per-site (domain) open rules (v2.2.0). A rule pins how links to a
@@ -86,14 +90,6 @@ class SiteRulesActivity : ComponentActivity() {
 @Composable
 private fun SiteRulesScreen(onBack: () -> Unit) {
   val context = LocalContext.current
-  var rules by remember { mutableStateOf(LinkPreferences.getSiteRules(context)) }
-  var editingHost by remember { mutableStateOf<String?>(null) }
-  var showAdd by remember { mutableStateOf(false) }
-
-  fun refresh() {
-    rules = LinkPreferences.getSiteRules(context)
-  }
-
   Scaffold(
     topBar = {
       TopAppBar(
@@ -104,58 +100,95 @@ private fun SiteRulesScreen(onBack: () -> Unit) {
           }
         }
       )
+    },
+    bottomBar = {
+      HirakuBottomBar(
+        selectedIndex = 1,
+        onSelect = { index ->
+          if (index != 1) {
+            openHomeTab(context, index)
+            (context as? Activity)?.finish()
+          }
+        }
+      )
     }
   ) { padding ->
-    Column(
+    Box(
       modifier = Modifier
         .fillMaxSize()
         .padding(padding)
-        .padding(16.dp)
     ) {
-      Text(
-        text = stringResource(R.string.site_rules_desc),
-        style = MaterialTheme.typography.bodySmall,
-        color = MaterialTheme.colorScheme.onSurfaceVariant
-      )
-      Spacer(modifier = Modifier.height(12.dp))
-      Button(
-        onClick = { showAdd = true },
-        modifier = Modifier.fillMaxWidth()
+      SiteRulesBody()
+    }
+  }
+}
+
+/**
+ * The site rules list with add/edit, shared between the standalone
+ * screen and the main screen's Sites tab (v2.3.0).
+ */
+@Composable
+fun SiteRulesBody() {
+  val context = LocalContext.current
+  var rules by remember { mutableStateOf(LinkPreferences.getSiteRules(context)) }
+  var editingHost by remember { mutableStateOf<String?>(null) }
+  var showAdd by remember { mutableStateOf(false) }
+
+  fun refresh() {
+    rules = LinkPreferences.getSiteRules(context)
+  }
+
+  Column(
+    modifier = Modifier
+      .fillMaxSize()
+      .padding(16.dp)
+  ) {
+    Text(
+      text = stringResource(R.string.site_rules_desc),
+      style = MaterialTheme.typography.bodySmall,
+      color = MaterialTheme.colorScheme.onSurfaceVariant
+    )
+    Spacer(modifier = Modifier.height(12.dp))
+    Button(
+      onClick = { showAdd = true },
+      modifier = Modifier.fillMaxWidth()
+    ) {
+      Text(stringResource(R.string.site_rules_add))
+    }
+    Spacer(modifier = Modifier.height(12.dp))
+    if (rules.isEmpty()) {
+      Box(
+        modifier = Modifier
+          .fillMaxSize()
+          .padding(bottom = 96.dp),
+        contentAlignment = Alignment.Center
       ) {
-        Text(stringResource(R.string.site_rules_add))
+        Text(
+          text = stringResource(R.string.site_rules_empty),
+          color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
       }
-      Spacer(modifier = Modifier.height(12.dp))
-      if (rules.isEmpty()) {
-        Box(
-          modifier = Modifier.fillMaxSize(),
-          contentAlignment = Alignment.Center
-        ) {
-          Text(
-            text = stringResource(R.string.site_rules_empty),
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-          )
-        }
-      } else {
-        LazyColumn(
-          modifier = Modifier.fillMaxSize(),
-          verticalArrangement = Arrangement.spacedBy(4.dp)
-        ) {
-          items(rules.entries.toList(), key = { it.key }) { (host, method) ->
-            Row(
-              modifier = Modifier
-                .fillMaxWidth()
-                .clickable { editingHost = host }
-                .padding(vertical = 10.dp),
-              verticalAlignment = Alignment.CenterVertically
-            ) {
-              Column(modifier = Modifier.weight(1f)) {
-                Text(text = host)
-                Text(
-                  text = method.displayLabel(context),
-                  style = MaterialTheme.typography.bodySmall,
-                  color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-              }
+    } else {
+      LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+        contentPadding = PaddingValues(bottom = 96.dp)
+      ) {
+        items(rules.entries.toList(), key = { it.key }) { (host, method) ->
+          Row(
+            modifier = Modifier
+              .fillMaxWidth()
+              .clickable { editingHost = host }
+              .padding(vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically
+          ) {
+            Column(modifier = Modifier.weight(1f)) {
+              Text(text = host)
+              Text(
+                text = method.displayLabel(context),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+              )
             }
           }
         }

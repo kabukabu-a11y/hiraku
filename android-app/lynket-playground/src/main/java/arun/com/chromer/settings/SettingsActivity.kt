@@ -74,7 +74,9 @@ import arun.com.chromer.customtab.LinkPreferences
 import arun.com.chromer.history.HistoryStore
 import arun.com.chromer.tabs.TabStore
 import arun.com.chromer.theme.LynketTheme
+import arun.com.chromer.ui.HirakuBottomBar
 import arun.com.chromer.ui.SegmentedControl
+import arun.com.chromer.ui.openHomeTab
 
 /**
  * All the fine-grained settings in one place: display, browsing,
@@ -87,7 +89,7 @@ class SettingsActivity : ComponentActivity() {
     super.onCreate(savedInstanceState)
     setContent {
       LynketTheme {
-        SettingsScreen(onBack = { finish() })
+        SettingsScreen(onBack = { finish() }, showBottomBar = true)
       }
     }
   }
@@ -95,7 +97,11 @@ class SettingsActivity : ComponentActivity() {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun SettingsScreen(onBack: () -> Unit) {
+fun SettingsScreen(
+  onBack: () -> Unit,
+  showBack: Boolean = true,
+  showBottomBar: Boolean = false
+) {
   val context = LocalContext.current
   var barOnTop by remember { mutableStateOf(LinkPreferences.isBarOnTop(context)) }
   var blurEnabled by remember { mutableStateOf(LinkPreferences.isOverlayBlurEnabled(context)) }
@@ -158,11 +164,26 @@ private fun SettingsScreen(onBack: () -> Unit) {
       TopAppBar(
         title = { Text(stringResource(R.string.settings_title)) },
         navigationIcon = {
-          IconButton(onClick = onBack) {
-            Icon(Icons.Filled.ArrowBack, contentDescription = stringResource(R.string.act_back))
+          if (showBack) {
+            IconButton(onClick = onBack) {
+              Icon(Icons.Filled.ArrowBack, contentDescription = stringResource(R.string.act_back))
+            }
           }
         }
       )
+    },
+    bottomBar = {
+      if (showBottomBar) {
+        HirakuBottomBar(
+          selectedIndex = 3,
+          onSelect = { index ->
+            if (index != 3) {
+              openHomeTab(context, index)
+              (context as? Activity)?.finish()
+            }
+          }
+        )
+      }
     }
   ) { innerPadding ->
     Column(
@@ -531,6 +552,10 @@ private fun SettingsScreen(onBack: () -> Unit) {
           }
         }
       }
+
+      // Clearance so the last card is never hidden behind the
+      // floating bottom bar (v2.3.0).
+      Spacer(modifier = Modifier.height(84.dp))
     }
   }
 }
