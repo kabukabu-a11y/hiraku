@@ -258,6 +258,11 @@
     <string name="settings_appearance">見た目</string>
     <string name="settings_glass">ガラス効果</string>
     <string name="settings_glass_desc">一部のハイエンド端末でのみ快適に利用できます</string>
+    <string name="settings_glass_strength">ガラスの強さ</string>
+    <string name="settings_glass_strength_desc">ぼかし・色の濃さ・縁の光り方の強さ</string>
+    <string name="glass_weak">弱</string>
+    <string name="glass_medium">中</string>
+    <string name="glass_strong">強</string>
     <string name="settings_dynamic_color">端末の色に合わせる</string>
     <string name="settings_dynamic_color_desc">端末のテーマカラーにアプリの色を合わせます</string>
     <string name="settings_theme">テーマ</string>

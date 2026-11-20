@@ -65,6 +65,7 @@ import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.Checkbox
+import androidx.compose.material3.CheckboxDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -638,7 +639,10 @@ class LinkHandlerActivity : ComponentActivity() {
                 ) {
                   Checkbox(
                     checked = fixForApp,
-                    onCheckedChange = { fixForApp = it }
+                    onCheckedChange = { fixForApp = it },
+                    colors = CheckboxDefaults.colors(
+                      uncheckedColor = GlassContentSecondary
+                    )
                   )
                   Text(
                     text = stringResource(
@@ -659,7 +663,10 @@ class LinkHandlerActivity : ComponentActivity() {
                 ) {
                   Checkbox(
                     checked = fixForSite,
-                    onCheckedChange = { fixForSite = it }
+                    onCheckedChange = { fixForSite = it },
+                    colors = CheckboxDefaults.colors(
+                      uncheckedColor = GlassContentSecondary
+                    )
                   )
                   Text(
                     text = stringResource(R.string.chooser_fix_for_site) + "（$host）",

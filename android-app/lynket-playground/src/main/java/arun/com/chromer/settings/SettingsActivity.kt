@@ -114,6 +114,7 @@ fun SettingsScreen(
   var preview by remember { mutableStateOf(LinkPreferences.isPreviewEnabled(context)) }
   var language by remember { mutableStateOf(LinkPreferences.getLanguage(context)) }
   var glassEnabled by remember { mutableStateOf(LinkPreferences.isGlassEnabled(context)) }
+  var glassStrength by remember { mutableStateOf(LinkPreferences.getGlassStrength(context)) }
   var dynamicColor by remember { mutableStateOf(LinkPreferences.isDynamicColor(context)) }
   var downloadApp by remember { mutableStateOf(LinkPreferences.getDownloadApp(context)) }
   var selectPopup by remember { mutableStateOf<String?>(null) }
@@ -270,6 +271,20 @@ fun SettingsScreen(
             (context as? Activity)?.recreate()
           }
         )
+        if (glassEnabled) {
+          GlassSelectRow(
+            label = stringResource(R.string.settings_glass_strength),
+            description = stringResource(R.string.settings_glass_strength_desc),
+            value = stringResource(
+              when (glassStrength) {
+                LinkPreferences.GLASS_WEAK -> R.string.glass_weak
+                LinkPreferences.GLASS_STRONG -> R.string.glass_strong
+                else -> R.string.glass_medium
+              }
+            ),
+            onClick = { selectPopup = "glassStrength" }
+          )
+        }
       }
 
       SettingsCard(title = stringResource(R.string.settings_browsing)) {
@@ -524,6 +539,21 @@ fun SettingsScreen(
           LinkPreferences.setBarOnTop(context, onTop)
           barOnTop = onTop
           selectPopup = null
+        },
+        onDismiss = { selectPopup = null }
+      )
+      "glassStrength" -> GlassSelectPopup(
+        options = listOf(
+          GlassOption(label = stringResource(R.string.glass_weak)),
+          GlassOption(label = stringResource(R.string.glass_medium)),
+          GlassOption(label = stringResource(R.string.glass_strong))
+        ),
+        selectedIndex = glassStrength,
+        onSelect = { index ->
+          LinkPreferences.setGlassStrength(context, index)
+          glassStrength = index
+          selectPopup = null
+          (context as? Activity)?.recreate()
         },
         onDismiss = { selectPopup = null }
       )

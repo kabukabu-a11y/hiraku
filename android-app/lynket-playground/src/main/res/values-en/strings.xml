@@ -238,6 +238,11 @@
     <string name="settings_appearance">Appearance</string>
     <string name="settings_glass">Glass effect</string>
     <string name="settings_glass_desc">Only runs smoothly on some high-end devices</string>
+    <string name="settings_glass_strength">Glass strength</string>
+    <string name="settings_glass_strength_desc">Blur, tint and edge highlight strength</string>
+    <string name="glass_weak">Weak</string>
+    <string name="glass_medium">Medium</string>
+    <string name="glass_strong">Strong</string>
     <string name="settings_dynamic_color">Match device colors</string>
     <string name="settings_dynamic_color_desc">Use the device theme colors in the app</string>
     <string name="settings_theme">Theme</string>
