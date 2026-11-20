@@ -517,6 +517,11 @@ fun GlassSelectPopup(
                 )
               }
           ) {
+            // When any row carries an icon, rows without one keep
+            // an empty slot so the labels stay aligned (item 77:
+            // the download-app list mixes the icon-less "system"
+            // row with app rows).
+            val anyIcons = options.any { it.iconBitmap != null || it.icon != null }
             options.forEachIndexed { index, option ->
               Row(
                 modifier = Modifier
@@ -544,6 +549,9 @@ fun GlassSelectPopup(
                     tint = Color.White.copy(alpha = 0.85f),
                     modifier = Modifier.size(20.dp)
                   )
+                  Spacer(modifier = Modifier.width(12.dp))
+                } else if (anyIcons) {
+                  Box(modifier = Modifier.size(24.dp))
                   Spacer(modifier = Modifier.width(12.dp))
                 }
                 Text(
