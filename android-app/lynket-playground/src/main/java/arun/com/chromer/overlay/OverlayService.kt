@@ -404,12 +404,8 @@ class OverlayService : Service() {
     // the bar buttons. Dragging it resizes the window freely.
     // v2.3.0: the corner grip is a small gentle arc sitting on the
     // transparent rounded corner — visually outside the page frame.
-    val grip = TextView(this).apply {
-      text = "◢"
-      setTextColor(0x99FFFFFF.toInt())
-      textSize = 14f
-      gravity = Gravity.CENTER
-      layoutParams = FrameLayout.LayoutParams(dp(30), dp(30)).apply {
+    val grip = ArcGripView(this, flipVertical = barOnTop).apply {
+      layoutParams = FrameLayout.LayoutParams(dp(26), dp(26)).apply {
         gravity = (if (barOnTop) Gravity.BOTTOM else Gravity.TOP) or Gravity.END
       }
     }
@@ -674,62 +670,6 @@ class OverlayService : Service() {
       grip.bringToFront()
     }
 
-    // v2.3.0: a subtle move handle pill overlapping the page at
-    // the edge opposite the bar (no dedicated band). Dragging it
-    // moves the window, like dragging the bar's top row.
-    val moveHandle = View(this).apply {
-      background = GradientDrawable().apply {
-        shape = GradientDrawable.RECTANGLE
-        cornerRadius = dp(3).toFloat()
-        setColor(0x59FFFFFF)
-      }
-      layoutParams = FrameLayout.LayoutParams(dp(40), dp(5)).apply {
-        gravity = (if (barOnTop) Gravity.BOTTOM else Gravity.TOP) or
-          Gravity.CENTER_HORIZONTAL
-        if (barOnTop) {
-          bottomMargin = dp(4)
-        } else {
-          topMargin = dp(4)
-        }
-      }
-    }
-    root.addView(moveHandle)
-    var handleStartX = 0
-    var handleStartY = 0
-    var handleRawX = 0f
-    var handleRawY = 0f
-    moveHandle.setOnTouchListener { v, event ->
-      val wm = windowManager ?: return@setOnTouchListener false
-      val r = rootView ?: return@setOnTouchListener false
-      val p = layoutParams ?: return@setOnTouchListener false
-      when (event.actionMasked) {
-        MotionEvent.ACTION_DOWN -> {
-          handleStartX = p.x
-          handleStartY = p.y
-          handleRawX = event.rawX
-          handleRawY = event.rawY
-          true
-        }
-        MotionEvent.ACTION_MOVE -> {
-          val maxX = (screenWidth - p.width).coerceAtLeast(0)
-          val maxY = (screenHeight - p.height).coerceAtLeast(0)
-          p.x = (handleStartX + (event.rawX - handleRawX).toInt()).coerceIn(0, maxX)
-          p.y = (handleStartY + (event.rawY - handleRawY).toInt()).coerceIn(0, maxY)
-          try {
-            wm.updateViewLayout(r, p)
-          } catch (_: Exception) {
-          }
-          true
-        }
-        MotionEvent.ACTION_UP -> {
-          saveGeometry()
-          v.performClick()
-          true
-        }
-        else -> false
-      }
-    }
-    moveHandle.bringToFront()
 
     root.setOnKeyListener { _, keyCode, event ->
       if (keyCode == KeyEvent.KEYCODE_BACK && event.action == KeyEvent.ACTION_UP) {
@@ -1851,5 +1791,37 @@ class OverlayService : Service() {
       } catch (_: Exception) {
       }
     }
+  }
+}
+
+/**
+ * The resize corner grip (v2.3.0): a small gentle arc, drawn on the
+ * window's transparent rounded corner so it reads as sitting just
+ * outside the page frame.
+ */
+private class ArcGripView(
+  context: Context,
+  private val flipVertical: Boolean
+) : View(context) {
+  private val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+    style = Paint.Style.STROKE
+    strokeWidth = 2f * context.resources.displayMetrics.density
+    color = 0x99FFFFFF.toInt()
+    strokeCap = Paint.Cap.ROUND
+  }
+
+  override fun onDraw(canvas: Canvas) {
+    super.onDraw(canvas)
+    val w = width.toFloat()
+    val h = height.toFloat()
+    val arcPath = Path()
+    if (flipVertical) {
+      arcPath.moveTo(2f, h - 3f)
+      arcPath.quadTo(w - 3f, h - 3f, w - 3f, 2f)
+    } else {
+      arcPath.moveTo(2f, 3f)
+      arcPath.quadTo(w - 3f, 3f, w - 3f, h - 2f)
+    }
+    canvas.drawPath(arcPath, paint)
   }
 }
