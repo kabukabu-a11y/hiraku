@@ -165,45 +165,10 @@ class BubbleService : Service() {
         FrameLayout.LayoutParams.MATCH_PARENT
       )
     }
-    val badgeLetter = TextView(this).apply {
-      gravity = Gravity.CENTER
-      setTextColor(Color.WHITE)
-      typeface = Typeface.DEFAULT_BOLD
-      textSize = 10f
-      text = letter
-      layoutParams = FrameLayout.LayoutParams(
-        FrameLayout.LayoutParams.WRAP_CONTENT,
-        FrameLayout.LayoutParams.WRAP_CONTENT
-      ).apply {
-        gravity = Gravity.CENTER
-      }
-    }
-    val badgeImage = ImageView(this).apply {
-      scaleType = ImageView.ScaleType.CENTER_CROP
-      visibility = View.GONE
-      layoutParams = FrameLayout.LayoutParams(
-        FrameLayout.LayoutParams.MATCH_PARENT,
-        FrameLayout.LayoutParams.MATCH_PARENT
-      )
-    }
-    val badge = FrameLayout(this).apply {
-      background = GradientDrawable().apply {
-        shape = GradientDrawable.OVAL
-        setColor(BUBBLE_PALETTE[colorIndex])
-        setStroke(dp(1), 0x88FFFFFF.toInt())
-      }
-      clipToOutline = true
-      layoutParams = FrameLayout.LayoutParams(dp(20), dp(20)).apply {
-        gravity = Gravity.BOTTOM or Gravity.END
-      }
-      addView(badgeLetter)
-      addView(badgeImage)
-    }
     val view = FrameLayout(this).apply {
       this.background = background
       elevation = dp(4).toFloat()
       addView(letterView)
-      addView(badge)
     }
 
     val params = WindowManager.LayoutParams(
@@ -229,9 +194,7 @@ class BubbleService : Service() {
       params = params,
       secret = secret,
       background = background,
-      letterView = letterView,
-      badgeImage = badgeImage,
-      badgeLetter = badgeLetter
+      letterView = letterView
     )
     setupTouchListener(item)
     bubbles.add(item)
