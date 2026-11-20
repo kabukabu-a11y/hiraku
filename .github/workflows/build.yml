@@ -3,7 +3,7 @@ name: Build check
 on:
   workflow_dispatch:
   push:
-    branches: [main]
+    branches: [main, glass-toolchain]
     paths:
       - "android-app/**"
       - ".github/workflows/build.yml"
@@ -31,12 +31,31 @@ jobs:
       - name: Decode release keystore
         run: echo "${{ secrets.HIRAKU_KEYSTORE_BASE64 }}" | tr -d '[:space:]' | base64 -d > ${{ github.workspace }}/release.jks
       - name: Build playground release APK
-        run: ./gradlew :lynket-playground:assembleRelease --stacktrace
+        run: |
+          set -o pipefail
+          ./gradlew :lynket-playground:assembleRelease --stacktrace 2>&1 | tee ${{ github.workspace }}/build.log
         env:
           HIRAKU_KEYSTORE_FILE: ${{ github.workspace }}/release.jks
           HIRAKU_KEYSTORE_PASSWORD: ${{ secrets.HIRAKU_KEYSTORE_PASSWORD }}
           HIRAKU_KEY_ALIAS: hiraku
           HIRAKU_KEY_PASSWORD: ${{ secrets.HIRAKU_KEYSTORE_PASSWORD }}
+      - name: Dump build errors as annotations
+        if: failure()
+        run: |
+          LOG=${{ github.workspace }}/build.log
+          esc() { printf '%s' "$1" | sed -e 's/%/%25/g' -e 's/\r/%0D/g' | cut -c1-600; }
+          { grep -E "^\* What went wrong" -A 12 "$LOG" || true; } | head -14 | while IFS= read -r line; do
+            [ -n "$line" ] && echo "::error::$(esc "$line")"
+          done
+          { grep -E "^e: |error: |FAILED|Caused by:" "$LOG" || true; } | awk '!seen[$0]++' | head -36 | while IFS= read -r line; do
+            echo "::error::$(esc "$line")"
+          done
+      - name: Upload build log
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-log
+          path: ${{ github.workspace }}/build.log
       - name: Upload APK
         if: success()
         uses: actions/upload-artifact@v4

@@ -1,17 +1,21 @@
 plugins {
   alias(libs.plugins.androidApplication)
   alias(libs.plugins.kotlinAndroid)
+  alias(libs.plugins.kotlinCompose)
   alias(libs.plugins.whetstone)
   alias(libs.plugins.kotlinKapt)
 }
 
 android {
   namespace = "arun.com.chromer"
-  compileSdk = 34
+  compileSdk = 37
 
   defaultConfig {
     applicationId = "com.kabukabu.hiraku"
-    minSdk = 28
+    // Glasmio 0.1.3 (the real Liquid Glass renderer) declares
+    // minSdk 33: its lens/refraction pipeline is built on AGSL
+    // RuntimeShader, which only exists on API 33+.
+    minSdk = 33
     targetSdk = 34
     versionCode = 233
     versionName = "2.3.3"
@@ -55,19 +59,19 @@ android {
     sourceCompatibility = JavaVersion.VERSION_11
     targetCompatibility = JavaVersion.VERSION_11
   }
-  kotlinOptions {
-    jvmTarget = "11"
-  }
   buildFeatures {
     compose = true
-  }
-  composeOptions {
-    kotlinCompilerExtensionVersion = "1.5.1"
   }
   packaging {
     resources {
       excludes += "/META-INF/{AL2.0,LGPL2.1}"
     }
+  }
+}
+
+kotlin {
+  compilerOptions {
+    jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_11)
   }
 }
 
@@ -79,6 +83,7 @@ whetstone {
 dependencies {
   implementation(libs.androidx.core.ktx)
   implementation(libs.androidx.lifecycle.runtime.ktx)
+  implementation(libs.androidx.lifecycle.runtime.compose)
   implementation(libs.androidx.activity.compose)
   implementation(platform(libs.androidx.compose.bom))
   implementation(libs.androidx.ui)
