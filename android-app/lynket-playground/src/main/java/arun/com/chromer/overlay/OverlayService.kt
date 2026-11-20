@@ -20,6 +20,7 @@
 
 package arun.com.chromer.overlay
 
+import android.animation.ValueAnimator
 import android.annotation.SuppressLint
 import android.app.Notification
 import android.app.NotificationChannel
@@ -32,7 +33,11 @@ import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
+import android.content.res.Configuration
 import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.graphics.Paint
+import android.graphics.Path
 import android.graphics.Color
 import android.graphics.Outline
 import android.graphics.PixelFormat
@@ -46,20 +51,20 @@ import android.provider.Settings
 import android.text.TextUtils
 import android.view.Gravity
 import android.view.KeyEvent
-import android.view.MenuItem
 import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
 import android.view.ViewOutlineProvider
 import android.view.WindowManager
+import android.view.animation.AccelerateDecelerateInterpolator
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.FrameLayout
+import android.widget.ImageView
 import android.widget.LinearLayout
-import android.widget.PopupMenu
 import android.widget.ProgressBar
 import android.widget.TextView
 import android.widget.Toast
@@ -72,7 +77,10 @@ import arun.com.chromer.customtab.displayLabel
 import arun.com.chromer.history.HistoryStore
 import arun.com.chromer.home.HomeActivity
 import arun.com.chromer.link.LinkHandlerActivity
+import arun.com.chromer.history.HistoryActivity
+import arun.com.chromer.readlater.ReadLaterStore
 import arun.com.chromer.settings.SettingsActivity
+import arun.com.chromer.ui.glassViewColor
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.math.abs
 
@@ -94,7 +102,12 @@ class OverlayService : Service() {
   private var rootView: FrameLayout? = null
   private var titleView: TextView? = null
   private var urlView: TextView? = null
-  private var backButton: TextView? = null
+  private var backButton: View? = null
+  private var faviconView: ImageView? = null
+  private var barTopRow: View? = null
+  private var menuView: View? = null
+  private var menuParams: WindowManager.LayoutParams? = null
+  private var menuContent: LinearLayout? = null
   private var shieldView: TextView? = null
   private var shieldCountView: TextView? = null
   private var progressBar: ProgressBar? = null
@@ -106,6 +119,7 @@ class OverlayService : Service() {
   private var findBarView: View? = null
   private var findBarParams: WindowManager.LayoutParams? = null
   private var blurWasOn: Boolean = false
+  private var windowAnimator: ValueAnimator? = null
 
   private var fullHeight: Int = 0
   private var peekHeight: Int = 0
@@ -147,7 +161,11 @@ class OverlayService : Service() {
         if (rootView != null) {
           webView?.loadUrl(url)
         } else {
-          createAndShowOverlay(url, intent.getBooleanExtra(EXTRA_PEEK, false))
+          createAndShowOverlay(
+            url,
+            intent.getBooleanExtra(EXTRA_PEEK, false),
+            intent.getIntArrayExtra(EXTRA_FROM_RECT)
+          )
         }
       }
 
@@ -195,7 +213,23 @@ class OverlayService : Service() {
   }
 
   @SuppressLint("SetJavaScriptEnabled", "ClickableViewAccessibility")
-  private fun createAndShowOverlay(initialUrl: String, startInPeek: Boolean) {
+
+  /** Whether the device is in dark mode (for glass tinting). */
+  private fun isDarkMode(): Boolean {
+    return (resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) ==
+      Configuration.UI_MODE_NIGHT_YES
+  }
+
+  /** The current glass surface color for the overlay windows. */
+  private fun glassBarColor(): Int {
+    return glassViewColor(isDarkMode(), LinkPreferences.isGlassEnabled(this))
+  }
+
+  private fun createAndShowOverlay(
+    initialUrl: String,
+    startInPeek: Boolean,
+    fromRect: IntArray? = null
+  ) {
     val metrics = resources.displayMetrics
     val screenWidth = metrics.widthPixels
     val screenHeight = metrics.heightPixels
@@ -215,7 +249,7 @@ class OverlayService : Service() {
     val cornerRadius = dp(28).toFloat()
     val root = FrameLayout(this).apply {
       background = GradientDrawable().apply {
-        setColor(BAR_COLOR)
+        setColor(glassBarColor())
         cornerRadii = floatArrayOf(
           cornerRadius, cornerRadius,
           cornerRadius, cornerRadius,
@@ -344,6 +378,24 @@ class OverlayService : Service() {
             titleView?.text = title
           }
         }
+
+        override fun onReceivedIcon(view: WebView?, icon: Bitmap?) {
+          if (icon != null) {
+            faviconView?.setImageBitmap(icon)
+          }
+        }
+      }
+    }
+
+    wv.setDownloadListener { downloadUrl, userAgent, contentDisposition, mimeType, _ ->
+      if (!downloadUrl.isNullOrBlank()) {
+        LinkDispatcher.handleDownload(
+          this@OverlayService,
+          downloadUrl,
+          userAgent,
+          contentDisposition,
+          mimeType
+        )
       }
     }
 
@@ -361,12 +413,10 @@ class OverlayService : Service() {
 
     // Resize grip on the corner opposite the bar, so it never covers
     // the bar buttons. Dragging it resizes the window freely.
-    val grip = TextView(this).apply {
-      text = "◢"
-      setTextColor(0x99FFFFFF.toInt())
-      textSize = 14f
-      gravity = Gravity.CENTER
-      layoutParams = FrameLayout.LayoutParams(dp(30), dp(30)).apply {
+    // v2.3.0: the corner grip is a small gentle arc sitting on the
+    // transparent rounded corner — visually outside the page frame.
+    val grip = ArcGripView(this, flipVertical = barOnTop).apply {
+      layoutParams = FrameLayout.LayoutParams(dp(26), dp(26)).apply {
         gravity = (if (barOnTop) Gravity.BOTTOM else Gravity.TOP) or Gravity.END
       }
     }
@@ -417,7 +467,7 @@ class OverlayService : Service() {
     var initialY = 0
     var initialRawX = 0f
     var initialRawY = 0f
-    titleView?.setOnTouchListener { v, event ->
+    (barTopRow ?: titleView)?.setOnTouchListener { v, event ->
       val wm = windowManager ?: return@setOnTouchListener false
       val r = rootView ?: return@setOnTouchListener false
       val p = layoutParams ?: return@setOnTouchListener false
@@ -525,9 +575,9 @@ class OverlayService : Service() {
             // is at the very edge) stay fully tappable.
             if (height == ViewGroup.LayoutParams.MATCH_PARENT) {
               if (barOnTop) {
-                topMargin = dp(64)
+                topMargin = dp(106)
               } else {
-                bottomMargin = dp(64)
+                bottomMargin = dp(106)
               }
             }
           }
@@ -631,6 +681,63 @@ class OverlayService : Service() {
       grip.bringToFront()
     }
 
+    // v2.3.0: a subtle move handle pill overlapping the page at
+    // the edge opposite the bar (no dedicated band). Dragging it
+    // moves the window, like dragging the bar's top row.
+    val moveHandle = View(this).apply {
+      background = GradientDrawable().apply {
+        shape = GradientDrawable.RECTANGLE
+        cornerRadius = dp(3).toFloat()
+        setColor(0x59FFFFFF)
+      }
+      layoutParams = FrameLayout.LayoutParams(dp(40), dp(5)).apply {
+        gravity = (if (barOnTop) Gravity.BOTTOM else Gravity.TOP) or
+          Gravity.CENTER_HORIZONTAL
+        if (barOnTop) {
+          bottomMargin = dp(4)
+        } else {
+          topMargin = dp(4)
+        }
+      }
+    }
+    root.addView(moveHandle)
+    var handleStartX = 0
+    var handleStartY = 0
+    var handleRawX = 0f
+    var handleRawY = 0f
+    moveHandle.setOnTouchListener { v, event ->
+      val wm = windowManager ?: return@setOnTouchListener false
+      val r = rootView ?: return@setOnTouchListener false
+      val p = layoutParams ?: return@setOnTouchListener false
+      when (event.actionMasked) {
+        MotionEvent.ACTION_DOWN -> {
+          handleStartX = p.x
+          handleStartY = p.y
+          handleRawX = event.rawX
+          handleRawY = event.rawY
+          true
+        }
+        MotionEvent.ACTION_MOVE -> {
+          val maxX = (screenWidth - p.width).coerceAtLeast(0)
+          val maxY = (screenHeight - p.height).coerceAtLeast(0)
+          p.x = (handleStartX + (event.rawX - handleRawX).toInt()).coerceIn(0, maxX)
+          p.y = (handleStartY + (event.rawY - handleRawY).toInt()).coerceIn(0, maxY)
+          try {
+            wm.updateViewLayout(r, p)
+          } catch (_: Exception) {
+          }
+          true
+        }
+        MotionEvent.ACTION_UP -> {
+          saveGeometry()
+          v.performClick()
+          true
+        }
+        else -> false
+      }
+    }
+    moveHandle.bringToFront()
+
     root.setOnKeyListener { _, keyCode, event ->
       if (keyCode == KeyEvent.KEYCODE_BACK && event.action == KeyEvent.ACTION_UP) {
         val currentWebView = webView
@@ -653,13 +760,68 @@ class OverlayService : Service() {
     // The surround catcher must be added BEFORE the overlay window so
     // it sits underneath it in z-order (v2.2.0).
     addCatcher()
-    if (LinkPreferences.getAnimLevel(this) != LinkPreferences.ANIM_OFF) {
+    if (fromRect == null &&
+      LinkPreferences.getAnimLevel(this) != LinkPreferences.ANIM_OFF
+    ) {
       params.windowAnimations = R.style.OverlayWindowAnim
     }
     windowManager?.addView(root, params)
     root.requestFocus()
     wv.loadUrl(initialUrl)
+    if (fromRect != null && fromRect.size == 4) {
+      animateWindowFrom(fromRect, params)
+    }
   }
+
+  /**
+   * Bubble -> overlay (v2.3.0): the window grows out of the
+   * bubble's rect, its center travelling along a gentle curve.
+   */
+  private fun animateWindowFrom(fromRect: IntArray, params: WindowManager.LayoutParams) {
+    val wm = windowManager ?: return
+    val root = rootView ?: return
+    val animLevel = LinkPreferences.getAnimLevel(this)
+    if (animLevel == LinkPreferences.ANIM_OFF) return
+    params.windowAnimations = 0
+    val targetX = params.x
+    val targetY = params.y
+    val targetW = params.width
+    val targetH = params.height
+    val fromCx = fromRect[0] + fromRect[2] / 2f
+    val fromCy = fromRect[1] + fromRect[3] / 2f
+    val targetCx = targetX + targetW / 2f
+    val targetCy = targetY + targetH / 2f
+    val ctrlX = (fromCx + targetCx) / 2f
+    val ctrlY = minOf(fromCy, targetCy) - dp(80)
+    val animator = ValueAnimator.ofFloat(0f, 1f).apply {
+      duration = if (animLevel == LinkPreferences.ANIM_WEAK) 200L else 340L
+      interpolator = AccelerateDecelerateInterpolator()
+      addUpdateListener { animation ->
+        val t = animation.animatedValue as Float
+        val cx = quad(fromCx, ctrlX, targetCx, t)
+        val cy = quad(fromCy, ctrlY, targetCy, t)
+        val w = lerp(fromRect[2].toFloat(), targetW.toFloat(), t)
+        val h = lerp(fromRect[3].toFloat(), targetH.toFloat(), t)
+        params.width = w.toInt()
+        params.height = h.toInt()
+        params.x = (cx - w / 2f).toInt()
+        params.y = (cy - h / 2f).toInt()
+        try {
+          wm.updateViewLayout(root, params)
+        } catch (_: Exception) {
+        }
+      }
+    }
+    windowAnimator = animator
+    animator.start()
+  }
+
+  private fun quad(a: Float, c: Float, b: Float, t: Float): Float {
+    val u = 1f - t
+    return u * u * a + 2f * u * t * c + t * t * b
+  }
+
+  private fun lerp(a: Float, b: Float, t: Float): Float = a + (b - a) * t
 
   private fun saveGeometry() {
     if (!LinkPreferences.isOverlayRemember(this)) return
@@ -680,6 +842,7 @@ class OverlayService : Service() {
       blurWasOn = (p.flags and blurFlag) != 0
       if (blurWasOn) {
         p.flags = p.flags and blurFlag.inv()
+        p.blurBehindRadius = 0
         p.dimAmount = 0f
         try {
           wm.updateViewLayout(root, p)
@@ -688,6 +851,7 @@ class OverlayService : Service() {
       }
     } else if (blurWasOn) {
       p.flags = p.flags or blurFlag
+      p.blurBehindRadius = dp(36)
       p.dimAmount = 0.2f
       try {
         wm.updateViewLayout(root, p)
@@ -766,7 +930,7 @@ class OverlayService : Service() {
       gravity = Gravity.CENTER_VERTICAL
       setPadding(dp(10), dp(4), dp(4), dp(4))
       background = GradientDrawable().apply {
-        setColor(BAR_COLOR)
+        setColor(glassBarColor())
         cornerRadius = dp(20).toFloat()
       }
     }
@@ -847,49 +1011,42 @@ class OverlayService : Service() {
   }
 
   private fun buildBar(): LinearLayout {
+    // v2.3.0: two rows. Top row: site icon + title + URL (dragging
+    // it moves the window). Bottom row: seven evenly spaced drawn
+    // icons. The whole bar is Liquid Glass.
     val bar = LinearLayout(this).apply {
-      orientation = LinearLayout.HORIZONTAL
-      gravity = Gravity.CENTER_VERTICAL
-      setBackgroundColor(BAR_COLOR)
+      orientation = LinearLayout.VERTICAL
+      setBackgroundColor(glassBarColor())
       layoutParams = LinearLayout.LayoutParams(
         ViewGroup.LayoutParams.MATCH_PARENT,
-        dp(64)
+        ViewGroup.LayoutParams.WRAP_CONTENT
       )
-      setPadding(dp(4), 0, dp(4), 0)
     }
 
-    val close = createBarButton("✕").apply {
-      setOnClickListener { closeOverlay() }
+    val topRow = LinearLayout(this).apply {
+      orientation = LinearLayout.HORIZONTAL
+      gravity = Gravity.CENTER_VERTICAL
+      layoutParams = LinearLayout.LayoutParams(
+        ViewGroup.LayoutParams.MATCH_PARENT,
+        dp(46)
+      )
+      setPadding(dp(12), 0, dp(12), 0)
     }
-
-    // Turn the overlay into a bubble, right next to ✕. The glyph is a
-    // minimize-style dash since v2.2.0 (the ◎ was hard to read).
-    val toBubble = createBarButton("ー").apply {
-      contentDescription = getString(R.string.overlay_to_bubble)
-      setOnClickListener { convertToBubble() }
+    val favicon = ImageView(this).apply {
+      layoutParams = LinearLayout.LayoutParams(dp(20), dp(20))
+      scaleType = ImageView.ScaleType.FIT_CENTER
     }
-
-    val back = createBarButton("◀").apply {
-      isEnabled = false
-      alpha = 0.4f
-      setOnClickListener {
-        if (webView?.canGoBack() == true) {
-          webView?.goBack()
-        }
-      }
-    }
-
     val titleColumn = LinearLayout(this).apply {
       orientation = LinearLayout.VERTICAL
       layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
-      setPadding(dp(6), 0, dp(6), 0)
+      setPadding(dp(8), 0, 0, 0)
     }
     val title = TextView(this).apply {
       setTextColor(Color.WHITE)
       text = currentUrl
       isSingleLine = true
       ellipsize = TextUtils.TruncateAt.END
-      textSize = 14f
+      textSize = 13f
     }
     val url = TextView(this).apply {
       setTextColor(0xFFBDC1C6.toInt())
@@ -900,7 +1057,44 @@ class OverlayService : Service() {
     }
     titleColumn.addView(title)
     titleColumn.addView(url)
+    topRow.addView(favicon)
+    topRow.addView(titleColumn)
+    if (!isDarkMode()) {
+      title.setTextColor(0xFF202124.toInt())
+      url.setTextColor(0xFF5F6368.toInt())
+    }
 
+    val iconRow = LinearLayout(this).apply {
+      orientation = LinearLayout.HORIZONTAL
+      layoutParams = LinearLayout.LayoutParams(
+        ViewGroup.LayoutParams.MATCH_PARENT,
+        dp(52)
+      )
+    }
+
+    val close = createBarIconButton(R.drawable.ic_ov_close).apply {
+      contentDescription = getString(R.string.act_close)
+      setOnClickListener { closeOverlay() }
+    }
+    val toBubble = createBarIconButton(R.drawable.ic_ov_minimize).apply {
+      contentDescription = getString(R.string.overlay_to_bubble)
+      setOnClickListener { convertToBubble() }
+    }
+    val back = createBarIconButton(R.drawable.ic_ov_back).apply {
+      isEnabled = false
+      alpha = 0.4f
+      contentDescription = getString(R.string.act_back)
+      setOnClickListener {
+        if (webView?.canGoBack() == true) {
+          webView?.goBack()
+        }
+      }
+    }
+
+    // The AD chip keeps its cell like the other six items.
+    val shieldCell = FrameLayout(this).apply {
+      layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f)
+    }
     val shield = TextView(this).apply {
       text = "AD"
       setTextColor(Color.WHITE)
@@ -911,9 +1105,8 @@ class OverlayService : Service() {
         cornerRadius = dp(8).toFloat()
         setColor(0xFF5F6368.toInt())
       }
-      layoutParams = LinearLayout.LayoutParams(dp(38), dp(28)).apply {
-        marginStart = dp(2)
-        marginEnd = dp(2)
+      layoutParams = FrameLayout.LayoutParams(dp(38), dp(28)).apply {
+        gravity = Gravity.CENTER
       }
       setOnClickListener {
         toggleAdBlock()
@@ -921,48 +1114,69 @@ class OverlayService : Service() {
     }
     val shieldCount = TextView(this).apply {
       setTextColor(0xFF8AB4F8.toInt())
-      textSize = 11f
+      textSize = 10f
       visibility = View.GONE
+      layoutParams = FrameLayout.LayoutParams(
+        ViewGroup.LayoutParams.WRAP_CONTENT,
+        ViewGroup.LayoutParams.WRAP_CONTENT
+      ).apply {
+        gravity = Gravity.TOP or Gravity.END
+        marginEnd = dp(6)
+        topMargin = dp(4)
+      }
     }
+    shieldCell.addView(shield)
+    shieldCell.addView(shieldCount)
 
-    val reload = createBarButton("⟳").apply {
+    val reload = createBarIconButton(R.drawable.ic_ov_reload).apply {
+      contentDescription = getString(R.string.act_reload)
       setOnClickListener { webView?.reload() }
     }
-
-    val expand = createBarButton("⤢").apply {
+    val expand = createBarIconButton(R.drawable.ic_ov_expand).apply {
+      contentDescription = getString(R.string.overlay_expand)
       setOnClickListener { togglePeek() }
     }
-
-    val menu = createBarButton("︙").apply {
+    val menu = createBarIconButton(R.drawable.ic_ov_more).apply {
+      contentDescription = getString(R.string.act_menu)
       setOnClickListener { showMenu(this) }
     }
 
-    bar.addView(close)
-    bar.addView(toBubble)
-    bar.addView(back)
-    bar.addView(titleColumn)
-    bar.addView(shield)
-    bar.addView(shieldCount)
-    bar.addView(reload)
-    bar.addView(expand)
-    bar.addView(menu)
+    iconRow.addView(close)
+    iconRow.addView(toBubble)
+    iconRow.addView(back)
+    iconRow.addView(shieldCell)
+    iconRow.addView(reload)
+    iconRow.addView(expand)
+    iconRow.addView(menu)
+
+    bar.addView(topRow)
+    bar.addView(iconRow)
 
     titleView = title
     urlView = url
     backButton = back
+    faviconView = favicon
+    barTopRow = topRow
     shieldView = shield
     shieldCountView = shieldCount
     updateShield()
     return bar
   }
 
-  private fun createBarButton(label: String): TextView {
-    return TextView(this).apply {
-      text = label
-      setTextColor(Color.WHITE)
-      textSize = 19f
-      gravity = Gravity.CENTER
-      layoutParams = LinearLayout.LayoutParams(dp(44), ViewGroup.LayoutParams.MATCH_PARENT)
+  /** One cell of the bar's icon row: a drawn vector icon, evenly sized. */
+  private fun createBarIconButton(drawableRes: Int): ImageView {
+    return ImageView(this).apply {
+      setImageResource(drawableRes)
+      scaleType = ImageView.ScaleType.CENTER_INSIDE
+      setPadding(dp(11), dp(11), dp(11), dp(11))
+      layoutParams = LinearLayout.LayoutParams(
+        0,
+        ViewGroup.LayoutParams.MATCH_PARENT,
+        1f
+      )
+      if (!isDarkMode()) {
+        setColorFilter(0xFF202124.toInt())
+      }
     }
   }
 
@@ -996,8 +1210,71 @@ class OverlayService : Service() {
   private fun convertToBubble() {
     val url = currentUrl
     val secret = secretSession
-    BubbleService.open(this, url, secret)
-    closeOverlay()
+    val wm = windowManager
+    val root = rootView
+    val params = layoutParams
+    if (wm == null || root == null || params == null ||
+      LinkPreferences.getAnimLevel(this) == LinkPreferences.ANIM_OFF
+    ) {
+      BubbleService.open(this, url, secret)
+      closeOverlay()
+      return
+    }
+    // Overlay -> bubble (v2.3.0): shrink along a curve toward the
+    // bubble's docking spot, then swap to the real bubble.
+    val metrics = resources.displayMetrics
+    val size = dp(56)
+    val rememberPos = LinkPreferences.isBubbleRememberPos(this)
+    val toLeft = rememberPos && LinkPreferences.getBubbleSide(this) == 0
+    val targetX = if (toLeft) 0 else metrics.widthPixels - size
+    val targetY = if (rememberPos && LinkPreferences.getBubbleY(this) >= 0) {
+      LinkPreferences.getBubbleY(this)
+    } else {
+      dp(120)
+    }
+    val startX = params.x
+    val startY = params.y
+    val startW = params.width
+    val startH = params.height
+    val startCx = startX + startW / 2f
+    val startCy = startY + startH / 2f
+    val targetCx = targetX + size / 2f
+    val targetCy = targetY + size / 2f
+    val ctrlX = (startCx + targetCx) / 2f
+    val ctrlY = minOf(startCy, targetCy) - dp(80)
+    val animator = ValueAnimator.ofFloat(0f, 1f).apply {
+      duration = if (LinkPreferences.getAnimLevel(this@OverlayService) ==
+        LinkPreferences.ANIM_WEAK
+      ) {
+        180L
+      } else {
+        300L
+      }
+      interpolator = AccelerateDecelerateInterpolator()
+      addUpdateListener { animation ->
+        val t = animation.animatedValue as Float
+        val cx = quad(startCx, ctrlX, targetCx, t)
+        val cy = quad(startCy, ctrlY, targetCy, t)
+        val w = lerp(startW.toFloat(), size.toFloat(), t)
+        val h = lerp(startH.toFloat(), size.toFloat(), t)
+        params.width = w.toInt()
+        params.height = h.toInt()
+        params.x = (cx - w / 2f).toInt()
+        params.y = (cy - h / 2f).toInt()
+        try {
+          wm.updateViewLayout(root, params)
+        } catch (_: Exception) {
+        }
+      }
+      addListener(object : android.animation.AnimatorListenerAdapter() {
+        override fun onAnimationEnd(animation: android.animation.Animator) {
+          BubbleService.open(this@OverlayService, url, secret)
+          closeOverlay()
+        }
+      })
+    }
+    windowAnimator = animator
+    animator.start()
   }
 
   private fun togglePeek() {
@@ -1113,7 +1390,8 @@ class OverlayService : Service() {
       contentDescription = getString(R.string.passthrough_handle)
       background = GradientDrawable().apply {
         shape = GradientDrawable.OVAL
-        setColor(0xE6202124.toInt())
+        setColor(glassBarColor())
+        setStroke(dp(1), 0x66FFFFFF)
       }
       elevation = dp(6).toFloat()
     }
@@ -1201,176 +1479,364 @@ class OverlayService : Service() {
     root.requestFocus()
   }
 
-  private fun showMenu(anchor: View) {
-    val popup = PopupMenu(this, anchor)
-    val menu = popup.menu
-    val forwardItem = menu.add(0, MENU_FORWARD, 0, getString(R.string.act_forward))
-    forwardItem.isEnabled = webView?.canGoForward() == true
-    menu.add(0, MENU_OPEN_PRIMARY, 1, getString(R.string.overlay_open_primary))
-    menu.add(
-      0,
-      MENU_DESKTOP,
-      2,
-      if (desktopMode) "✓ " + getString(R.string.site_desktop) else getString(R.string.site_desktop)
-    )
-    menu.add(
-      0,
-      MENU_ADBLOCK,
-      3,
-      if (adBlockEnabled) "✓ " + getString(R.string.adblock_title) else getString(R.string.adblock_title)
-    )
-    menu.add(0, MENU_PASSTHROUGH, 4, getString(R.string.overlay_passthrough))
-    menu.add(0, MENU_MINIMIZE, 5, getString(R.string.overlay_minimize))
-    menu.add(0, MENU_FULLSCREEN, 6, getString(R.string.overlay_open_in_app))
-    val aspectSub = menu.addSubMenu(0, MENU_ASPECT, 7, getString(R.string.overlay_aspect))
-    for ((index, pair) in ASPECT_RATIOS.withIndex()) {
-      aspectSub.add(2, MENU_ASPECT_BASE + index, index, pair.first)
-    }
-    aspectSub.add(2, MENU_ASPECT_FULL, ASPECT_RATIOS.size, getString(R.string.aspect_full))
-    val sub = menu.addSubMenu(0, MENU_OTHER_METHODS, 8, getString(R.string.menu_other_methods))
-    // Same customized list as the chooser screens, minus the methods
-    // that make no sense from inside the overlay itself. Labels use
-    // the actual browser names (v2.1.0).
-    val methods = LinkPreferences.getChooserMethods(this)
-      .filter { it != OpenMethod.STAY_OVERLAY && it != OpenMethod.CANCEL }
-    for ((index, method) in methods.withIndex()) {
-      sub.add(1, MENU_METHOD_BASE + index, index, method.displayLabel(this))
-    }
-    menu.add(0, MENU_COPY, 9, getString(R.string.menu_copy_link))
-    menu.add(0, MENU_SHARE, 10, getString(R.string.act_share))
-    menu.add(0, MENU_SETTINGS, 11, getString(R.string.overlay_settings))
-    menu.add(0, MENU_FIND, 12, getString(R.string.overlay_find))
-    menu.add(0, MENU_READ_LATER, 13, getString(R.string.overlay_read_later))
-    menu.add(0, MENU_SCREENSHOT, 14, getString(R.string.overlay_screenshot))
+  // ----- v2.3.0: the menu is a glass panel that pops out of the bar -----
 
-    popup.setOnMenuItemClickListener { item: MenuItem ->
-      when {
-        item.itemId == MENU_ASPECT_FULL -> {
-          resetGeometry()
-          true
-        }
-        item.itemId >= MENU_ASPECT_BASE -> {
-          val ratio = ASPECT_RATIOS.getOrNull(item.itemId - MENU_ASPECT_BASE)?.second
-          if (ratio != null) {
-            applyAspect(ratio)
-          }
-          true
-        }
-        item.itemId >= MENU_METHOD_BASE -> {
-          val method = methods.getOrNull(item.itemId - MENU_METHOD_BASE)
-          if (method != null) {
-            val url = currentUrl
-            if (method != OpenMethod.SHARE) {
-              closeOverlay()
-            }
-            LinkDispatcher.open(this, url, method, secretSession)
-          }
-          true
-        }
-        item.itemId == MENU_FORWARD -> {
-          if (webView?.canGoForward() == true) webView?.goForward()
-          true
-        }
-        item.itemId == MENU_OPEN_PRIMARY -> {
-          // Route through the handler activity so the chosen browser
-          // opens as a real Custom Tab (needs an activity context).
-          val url = currentUrl
-          closeOverlay()
-          try {
-            startActivity(
-              LinkHandlerActivity.createDispatchIntent(
-                this,
-                url,
-                OpenMethod.CUSTOM_TAB_PRIMARY,
-                secretSession
-              )
-            )
-          } catch (_: Exception) {
-          }
-          true
-        }
-        item.itemId == MENU_DESKTOP -> {
-          desktopMode = !desktopMode
-          LinkPreferences.setDesktopDefault(this@OverlayService, desktopMode)
-          webView?.let { view ->
-            view.settings.userAgentString = if (desktopMode) DESKTOP_UA else null
-            view.settings.useWideViewPort = desktopMode
-            view.reload()
-          }
-          true
-        }
-        item.itemId == MENU_FIND -> {
-          showFindBar()
-          true
-        }
-        item.itemId == MENU_READ_LATER -> {
-          arun.com.chromer.readlater.ReadLaterStore.add(
-            this@OverlayService,
-            currentUrl,
-            titleView?.text?.toString() ?: currentUrl
-          )
-          Toast.makeText(
-            this@OverlayService,
-            getString(R.string.read_later_added),
-            Toast.LENGTH_SHORT
-          ).show()
-          true
-        }
-        item.itemId == MENU_SCREENSHOT -> {
-          webView?.let { view ->
-            arun.com.chromer.browser.ScreenshotShare.captureAndShare(
-              this@OverlayService,
-              view
-            )
-          }
-          true
-        }
-        item.itemId == MENU_ADBLOCK -> {
-          toggleAdBlock()
-          true
-        }
-        item.itemId == MENU_PASSTHROUGH -> {
-          enterPassthrough()
-          true
-        }
-        item.itemId == MENU_MINIMIZE -> {
-          toggleMinimize()
-          true
-        }
-        item.itemId == MENU_FULLSCREEN -> {
-          val url = currentUrl
-          val secret = secretSession
-          closeOverlay()
-          LinkDispatcher.openInApp(this, url, secret)
-          true
-        }
-        item.itemId == MENU_COPY -> {
-          try {
-            val clipboard = getSystemService(CLIPBOARD_SERVICE) as ClipboardManager
-            clipboard.setPrimaryClip(ClipData.newPlainText("URL", currentUrl))
-            Toast.makeText(this, getString(R.string.link_copied), Toast.LENGTH_SHORT).show()
-          } catch (_: Exception) {
-          }
-          true
-        }
-        item.itemId == MENU_SHARE -> {
-          LinkDispatcher.share(this, currentUrl)
-          true
-        }
-        item.itemId == MENU_SETTINGS -> {
-          try {
-            startActivity(
-              Intent(this, SettingsActivity::class.java)
-                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            )
-          } catch (_: Exception) {
-          }
-          true
-        }
-        else -> false
+  private fun showMenu(anchor: View) {
+    hideMenu()
+    val wm = windowManager ?: return
+    val dark = isDarkMode()
+    val content = LinearLayout(this).apply {
+      orientation = LinearLayout.VERTICAL
+      background = GradientDrawable().apply {
+        setColor(glassBarColor())
+        cornerRadius = dp(22).toFloat()
+        setStroke(dp(1), if (dark) 0x38FFFFFF else 0x22000000)
+      }
+      elevation = dp(10).toFloat()
+      setPadding(dp(8), dp(8), dp(8), dp(8))
+    }
+    menuContent = content
+    showMenuPage(MenuPage.MAIN)
+
+    val params = WindowManager.LayoutParams(
+      dp(288),
+      WindowManager.LayoutParams.WRAP_CONTENT,
+      WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
+      WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+        WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
+        WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH,
+      PixelFormat.TRANSLUCENT
+    ).apply {
+      val barOnTop = LinkPreferences.isBarOnTop(this@OverlayService)
+      gravity = (if (barOnTop) Gravity.TOP else Gravity.BOTTOM) or Gravity.END
+      x = dp(8)
+      y = if (barOnTop) {
+        statusBarHeight() + dp(120)
+      } else {
+        dp(120)
+      }
+      if (LinkPreferences.getAnimLevel(this@OverlayService) != LinkPreferences.ANIM_OFF) {
+        windowAnimations = R.style.OverlayMenuAnim
       }
     }
-    popup.show()
+    val panel = FrameLayout(this).apply {
+      addView(content)
+      setOnTouchListener { _, event ->
+        if (event.actionMasked == MotionEvent.ACTION_OUTSIDE) {
+          hideMenu()
+          true
+        } else {
+          false
+        }
+      }
+    }
+    menuView = panel
+    menuParams = params
+    try {
+      wm.addView(panel, params)
+    } catch (_: Exception) {
+      menuView = null
+      menuParams = null
+      menuContent = null
+    }
+  }
+
+  private fun hideMenu() {
+    val panel = menuView ?: return
+    try {
+      windowManager?.removeView(panel)
+    } catch (_: Exception) {
+    }
+    menuView = null
+    menuParams = null
+    menuContent = null
+  }
+
+  private enum class MenuPage { MAIN, METHODS, ASPECT }
+
+  private fun showMenuPage(page: MenuPage) {
+    val content = menuContent ?: return
+    content.removeAllViews()
+    when (page) {
+      MenuPage.MAIN -> buildMainMenuPage(content)
+      MenuPage.METHODS -> buildMethodsMenuPage(content)
+      MenuPage.ASPECT -> buildAspectMenuPage(content)
+    }
+  }
+
+  private fun menuTextColor(): Int = if (isDarkMode()) Color.WHITE else 0xFF202124.toInt()
+
+  private fun menuRow(
+    iconRes: Int,
+    label: String,
+    enabled: Boolean = true,
+    onClick: () -> Unit
+  ): View {
+    val row = LinearLayout(this).apply {
+      orientation = LinearLayout.HORIZONTAL
+      gravity = Gravity.CENTER_VERTICAL
+      layoutParams = LinearLayout.LayoutParams(
+        ViewGroup.LayoutParams.MATCH_PARENT,
+        dp(48)
+      )
+      setPadding(dp(10), 0, dp(10), 0)
+      alpha = if (enabled) 1f else 0.4f
+      if (enabled) {
+        setOnClickListener { onClick() }
+      }
+    }
+    val icon = ImageView(this).apply {
+      setImageResource(iconRes)
+      layoutParams = LinearLayout.LayoutParams(dp(21), dp(21))
+      if (!isDarkMode()) {
+        setColorFilter(0xFF202124.toInt())
+      }
+    }
+    val text = TextView(this).apply {
+      text = label
+      setTextColor(menuTextColor())
+      textSize = 14f
+      isSingleLine = true
+      ellipsize = TextUtils.TruncateAt.END
+      layoutParams = LinearLayout.LayoutParams(
+        0,
+        ViewGroup.LayoutParams.WRAP_CONTENT,
+        1f
+      ).apply {
+        marginStart = dp(12)
+      }
+    }
+    row.addView(icon)
+    row.addView(text)
+    return row
+  }
+
+  private fun buildMainMenuPage(content: LinearLayout) {
+    val checkSuffix = " ✓"
+    content.addView(
+      menuRow(R.drawable.ic_ov_forward, getString(R.string.act_forward),
+        enabled = webView?.canGoForward() == true) {
+        hideMenu()
+        if (webView?.canGoForward() == true) webView?.goForward()
+      }
+    )
+    content.addView(
+      menuRow(R.drawable.ic_ov_open_external, getString(R.string.overlay_open_primary)) {
+        hideMenu()
+        val url = currentUrl
+        closeOverlay()
+        try {
+          startActivity(
+            LinkHandlerActivity.createDispatchIntent(
+              this,
+              url,
+              OpenMethod.CUSTOM_TAB_PRIMARY,
+              secretSession
+            )
+          )
+        } catch (_: Exception) {
+        }
+      }
+    )
+    content.addView(
+      menuRow(
+        R.drawable.ic_ov_desktop,
+        getString(R.string.site_desktop) + if (desktopMode) checkSuffix else ""
+      ) {
+        desktopMode = !desktopMode
+        LinkPreferences.setDesktopDefault(this, desktopMode)
+        webView?.let { view ->
+          view.settings.userAgentString = if (desktopMode) DESKTOP_UA else null
+          view.settings.useWideViewPort = desktopMode
+          view.reload()
+        }
+        showMenuPage(MenuPage.MAIN)
+      }
+    )
+    content.addView(
+      menuRow(
+        R.drawable.ic_ov_shield,
+        getString(R.string.adblock_title) + if (adBlockEnabled) checkSuffix else ""
+      ) {
+        toggleAdBlock()
+        showMenuPage(MenuPage.MAIN)
+      }
+    )
+    content.addView(
+      menuRow(R.drawable.ic_ov_passthrough, getString(R.string.overlay_passthrough)) {
+        hideMenu()
+        enterPassthrough()
+      }
+    )
+    content.addView(
+      menuRow(R.drawable.ic_ov_other, getString(R.string.menu_other_methods)) {
+        showMenuPage(MenuPage.METHODS)
+      }
+    )
+    content.addView(
+      menuRow(R.drawable.ic_ov_aspect, getString(R.string.overlay_aspect)) {
+        showMenuPage(MenuPage.ASPECT)
+      }
+    )
+    content.addView(
+      menuRow(R.drawable.ic_ov_copy, getString(R.string.menu_copy_link)) {
+        hideMenu()
+        try {
+          val clipboard = getSystemService(CLIPBOARD_SERVICE) as ClipboardManager
+          clipboard.setPrimaryClip(ClipData.newPlainText("URL", currentUrl))
+          Toast.makeText(this, getString(R.string.link_copied), Toast.LENGTH_SHORT).show()
+        } catch (_: Exception) {
+        }
+      }
+    )
+    content.addView(
+      menuRow(R.drawable.ic_ov_find, getString(R.string.overlay_find)) {
+        hideMenu()
+        showFindBar()
+      }
+    )
+    content.addView(
+      menuRow(R.drawable.ic_ov_screenshot, getString(R.string.overlay_screenshot)) {
+        hideMenu()
+        webView?.let { view ->
+          arun.com.chromer.browser.ScreenshotShare.captureAndShare(this, view)
+        }
+      }
+    )
+
+    // Bottom round icon row: share / bookmark / history / settings.
+    val iconRow = LinearLayout(this).apply {
+      orientation = LinearLayout.HORIZONTAL
+      layoutParams = LinearLayout.LayoutParams(
+        ViewGroup.LayoutParams.MATCH_PARENT,
+        ViewGroup.LayoutParams.WRAP_CONTENT
+      ).apply {
+        topMargin = dp(6)
+      }
+    }
+    iconRow.addView(
+      menuRoundButton(R.drawable.ic_ov_share_nodes, getString(R.string.overlay_share_row)) {
+        hideMenu()
+        LinkDispatcher.share(this, currentUrl)
+      }
+    )
+    iconRow.addView(
+      menuRoundButton(R.drawable.ic_ov_bookmark, getString(R.string.overlay_bookmark)) {
+        ReadLaterStore.add(
+          this,
+          currentUrl,
+          titleView?.text?.toString() ?: currentUrl
+        )
+        Toast.makeText(this, getString(R.string.read_later_added), Toast.LENGTH_SHORT).show()
+        hideMenu()
+      }
+    )
+    iconRow.addView(
+      menuRoundButton(R.drawable.ic_ov_history, getString(R.string.overlay_history)) {
+        hideMenu()
+        try {
+          startActivity(
+            Intent(this, HistoryActivity::class.java)
+              .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+          )
+        } catch (_: Exception) {
+        }
+      }
+    )
+    iconRow.addView(
+      menuRoundButton(R.drawable.ic_ov_settings, getString(R.string.overlay_settings)) {
+        hideMenu()
+        try {
+          startActivity(
+            Intent(this, SettingsActivity::class.java)
+              .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+          )
+        } catch (_: Exception) {
+        }
+      }
+    )
+    content.addView(iconRow)
+  }
+
+  private fun menuRoundButton(iconRes: Int, label: String, onClick: () -> Unit): View {
+    val cell = LinearLayout(this).apply {
+      orientation = LinearLayout.VERTICAL
+      gravity = Gravity.CENTER
+      layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+      setPadding(0, dp(4), 0, dp(2))
+      setOnClickListener { onClick() }
+    }
+    val circle = FrameLayout(this).apply {
+      background = GradientDrawable().apply {
+        shape = GradientDrawable.OVAL
+        setColor(if (isDarkMode()) 0x26FFFFFF else 0x14000000)
+        setStroke(dp(1), if (isDarkMode()) 0x30FFFFFF else 0x1A000000)
+      }
+      layoutParams = LinearLayout.LayoutParams(dp(44), dp(44))
+    }
+    val icon = ImageView(this).apply {
+      setImageResource(iconRes)
+      layoutParams = FrameLayout.LayoutParams(dp(21), dp(21)).apply {
+        gravity = Gravity.CENTER
+      }
+      if (!isDarkMode()) {
+        setColorFilter(0xFF202124.toInt())
+      }
+    }
+    circle.addView(icon)
+    val text = TextView(this).apply {
+      text = label
+      setTextColor(menuTextColor())
+      textSize = 9f
+      gravity = Gravity.CENTER
+    }
+    cell.addView(circle)
+    cell.addView(text)
+    return cell
+  }
+
+  private fun buildMethodsMenuPage(content: LinearLayout) {
+    content.addView(
+      menuRow(R.drawable.ic_ov_back, getString(R.string.act_back)) {
+        showMenuPage(MenuPage.MAIN)
+      }
+    )
+    val methods = LinkPreferences.getChooserMethods(this)
+      .filter { it != OpenMethod.STAY_OVERLAY && it != OpenMethod.CANCEL }
+    for (method in methods) {
+      content.addView(
+        menuRow(R.drawable.ic_ov_globe, method.displayLabel(this)) {
+          hideMenu()
+          val url = currentUrl
+          if (method != OpenMethod.SHARE) {
+            closeOverlay()
+          }
+          LinkDispatcher.open(this, url, method, secretSession)
+        }
+      )
+    }
+  }
+
+  private fun buildAspectMenuPage(content: LinearLayout) {
+    content.addView(
+      menuRow(R.drawable.ic_ov_back, getString(R.string.act_back)) {
+        showMenuPage(MenuPage.MAIN)
+      }
+    )
+    for ((label, ratio) in ASPECT_RATIOS) {
+      content.addView(
+        menuRow(R.drawable.ic_ov_aspect, label) {
+          hideMenu()
+          applyAspect(ratio)
+        }
+      )
+    }
+    content.addView(
+      menuRow(R.drawable.ic_ov_expand, getString(R.string.aspect_full)) {
+        hideMenu()
+        resetGeometry()
+      }
+    )
   }
 
   private fun updateNavigationButtons(view: WebView?) {
@@ -1392,6 +1858,9 @@ class OverlayService : Service() {
   }
 
   private fun cleanup() {
+    windowAnimator?.cancel()
+    windowAnimator = null
+    hideMenu()
     removeCatcher()
     findBarView?.let { bar ->
       try {
@@ -1421,6 +1890,8 @@ class OverlayService : Service() {
       wv.destroy()
     }
     rootView = null
+    barTopRow = null
+    faviconView = null
     titleView = null
     urlView = null
     backButton = null
@@ -1437,6 +1908,7 @@ class OverlayService : Service() {
     const val EXTRA_URL = "arun.com.chromer.overlay.EXTRA_URL"
     const val EXTRA_PEEK = "arun.com.chromer.overlay.EXTRA_PEEK"
     const val EXTRA_SECRET = "arun.com.chromer.overlay.EXTRA_SECRET"
+    const val EXTRA_FROM_RECT = "arun.com.chromer.overlay.EXTRA_FROM_RECT"
     private const val ACTION_OPEN = "arun.com.chromer.overlay.ACTION_OPEN"
     private const val ACTION_CLOSE = "arun.com.chromer.overlay.ACTION_CLOSE"
     private const val CHANNEL_ID = "overlay_browsing"
@@ -1481,7 +1953,8 @@ class OverlayService : Service() {
       context: Context,
       url: String,
       peek: Boolean = false,
-      secret: Boolean = false
+      secret: Boolean = false,
+      fromRect: IntArray? = null
     ): Boolean {
       if (!canDrawOverlays(context)) return false
       return try {
@@ -1491,6 +1964,7 @@ class OverlayService : Service() {
             .putExtra(EXTRA_URL, url)
             .putExtra(EXTRA_PEEK, peek)
             .putExtra(EXTRA_SECRET, secret)
+            .putExtra(EXTRA_FROM_RECT, fromRect)
         )
         true
       } catch (_: Exception) {
@@ -1507,5 +1981,37 @@ class OverlayService : Service() {
       } catch (_: Exception) {
       }
     }
+  }
+}
+
+/**
+ * The resize corner grip (v2.3.0): a small gentle arc, drawn on the
+ * window's transparent rounded corner so it reads as sitting just
+ * outside the page frame.
+ */
+private class ArcGripView(
+  context: Context,
+  private val flipVertical: Boolean
+) : View(context) {
+  private val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+    style = Paint.Style.STROKE
+    strokeWidth = 2f * context.resources.displayMetrics.density
+    color = 0x99FFFFFF.toInt()
+    strokeCap = Paint.Cap.ROUND
+  }
+
+  override fun onDraw(canvas: Canvas) {
+    super.onDraw(canvas)
+    val w = width.toFloat()
+    val h = height.toFloat()
+    val arcPath = Path()
+    if (flipVertical) {
+      arcPath.moveTo(2f, h - 3f)
+      arcPath.quadTo(w - 3f, h - 3f, w - 3f, 2f)
+    } else {
+      arcPath.moveTo(2f, 3f)
+      arcPath.quadTo(w - 3f, 3f, w - 3f, h - 2f)
+    }
+    canvas.drawPath(arcPath, paint)
   }
 }
