@@ -249,4 +249,38 @@
     <string name="overlay_find">ページ内検索</string>
     <string name="overlay_read_later">あとで読む</string>
     <string name="overlay_screenshot">スクリーンショット</string>
+
+    <!-- v2.3.0 -->
+    <string name="nav_apps">アプリ</string>
+    <string name="settings_appearance">見た目</string>
+    <string name="settings_glass">ガラス効果</string>
+    <string name="settings_glass_desc">一部のハイエンド端末でのみ快適に利用できます</string>
+    <string name="settings_dynamic_color">端末の色に合わせる</string>
+    <string name="settings_dynamic_color_desc">端末のテーマカラーにアプリの色を合わせます</string>
+    <string name="settings_theme">テーマ</string>
+    <string name="theme_system">システム</string>
+    <string name="theme_light">ライト</string>
+    <string name="theme_dark">ダーク</string>
+    <string name="settings_download">ダウンロード</string>
+    <string name="settings_download_app">ダウンロードに使うアプリ</string>
+    <string name="settings_download_app_desc">ダウンロードリンクを押したときに使うアプリです</string>
+    <string name="settings_system_default">システム標準</string>
+    <string name="secret_note">シークレットモードでも、選んだブラウザ（Chromeなど）で開いた場合、そのブラウザ側の履歴には残ります。履歴を残したくないときは「重ねて表示」などのアプリに留まる開き方を使うか、ブラウザ側のシークレットタブを使ってください</string>
+    <string name="apps_sites_title">アプリとサイト</string>
+    <string name="apps_tab_apps">アプリ</string>
+    <string name="apps_tab_sites">サイト</string>
+    <string name="sites_add_top">サイトを追加</string>
+    <string name="tab_history">履歴</string>
+    <string name="tab_bookmarks">ブックマーク</string>
+    <string name="chooser_items_title">選択画面の項目</string>
+    <string name="chooser_items_desc">ドラッグで並べ替えできます。区切り線より下に置いた項目は、開き方を選ぶ画面に出ません</string>
+    <string name="chooser_items_shown">表示</string>
+    <string name="chooser_items_hidden">非表示</string>
+    <string name="chooser_items_add_app">共有先アプリを追加</string>
+    <string name="chooser_items_add_desc">リンクを受け取れるアプリを、開き方として直接選べるようにします</string>
+    <string name="settings_backup_desc_v2">設定・アプリ別/サイト別ルール・履歴・あとで読むを、まとめてファイルに保存したり読み込んだりできます</string>
+    <string name="download_started">ダウンロードを開始しました</string>
+    <string name="overlay_bookmark">ブックマーク</string>
+    <string name="overlay_history">履歴</string>
+    <string name="overlay_share_row">共有</string>
 </resources>

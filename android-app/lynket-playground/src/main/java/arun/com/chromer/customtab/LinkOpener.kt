@@ -77,6 +77,35 @@ enum class OpenMethod(@StringRes val labelRes: Int) {
   }
 }
 
+/**
+ * One row of the chooser sheet (v2.3.0): either an [OpenMethod] or a
+ * share-target app the user added. Ids are the storage format used by
+ * [LinkPreferences] ("M:<method>" / "A:<package>").
+ */
+sealed class ChooserItem {
+  abstract val id: String
+
+  data class MethodItem(val method: OpenMethod) : ChooserItem() {
+    override val id: String get() = "M:" + method.name
+  }
+
+  data class ShareItem(val packageName: String) : ChooserItem() {
+    override val id: String get() = "A:" + packageName
+  }
+
+  companion object {
+    fun fromId(id: String): ChooserItem? {
+      return when {
+        id.startsWith("M:") ->
+          OpenMethod.fromName(id.substring(2))?.let { MethodItem(it) }
+        id.startsWith("A:") ->
+          id.substring(2).takeIf { it.isNotBlank() }?.let { ShareItem(it) }
+        else -> null
+      }
+    }
+  }
+}
+
 /** Legacy mode enum, kept only to migrate old settings to [OpenMethod]. */
 enum class OpenMode {
   IN_APP,
@@ -293,8 +322,9 @@ object LinkPreferences {
 
   /** Methods shown in chooser UIs: user order, hidden ones removed. */
   fun getChooserMethods(context: Context): List<OpenMethod> {
-    val hidden = getHiddenMethods(context)
-    val visible = getChooserOrder(context).filter { it !in hidden }
+    val visible = getVisibleChooserItems(context)
+      .filterIsInstance<ChooserItem.MethodItem>()
+      .map { it.method }
     return visible.ifEmpty { listOf(OpenMethod.STAY_OVERLAY) }
   }
 
@@ -596,6 +626,215 @@ object LinkPreferences {
 
   fun setPassthroughTapEnabled(context: Context, enabled: Boolean) {
     prefs(context).edit().putBoolean(KEY_PASSTHROUGH_TAP, enabled).apply()
+  }
+
+  // ----- v2.3.0: appearance (glass / dynamic color) -----
+
+  private const val KEY_GLASS_ENABLED = "glass_enabled"
+  private const val KEY_DYNAMIC_COLOR = "dynamic_color"
+
+  /** Liquid Glass surfaces across the app (chooser, bars, menus). */
+  fun isGlassEnabled(context: Context): Boolean {
+    return prefs(context).getBoolean(KEY_GLASS_ENABLED, true)
+  }
+
+  fun setGlassEnabled(context: Context, enabled: Boolean) {
+    prefs(context).edit().putBoolean(KEY_GLASS_ENABLED, enabled).apply()
+  }
+
+  /** Match the app colors to the device theme colors (Android 12+). */
+  fun isDynamicColor(context: Context): Boolean {
+    return prefs(context).getBoolean(KEY_DYNAMIC_COLOR, true)
+  }
+
+  fun setDynamicColor(context: Context, enabled: Boolean) {
+    prefs(context).edit().putBoolean(KEY_DYNAMIC_COLOR, enabled).apply()
+  }
+
+  // ----- v2.3.0: download app -----
+
+  private const val KEY_DOWNLOAD_APP = "download_app"
+
+  /** Package that receives download links, or null for system default. */
+  fun getDownloadApp(context: Context): String? {
+    return prefs(context).getString(KEY_DOWNLOAD_APP, null)
+  }
+
+  fun setDownloadApp(context: Context, packageName: String?) {
+    prefs(context).edit().apply {
+      if (packageName == null) {
+        remove(KEY_DOWNLOAD_APP)
+      } else {
+        putString(KEY_DOWNLOAD_APP, packageName)
+      }
+    }.apply()
+  }
+
+  // ----- v2.3.0: per-site secret -----
+
+  private const val KEY_SECRET_SITES = "secret_sites"
+
+  fun getSecretSites(context: Context): Set<String> {
+    val raw = prefs(context).getString(KEY_SECRET_SITES, null)
+    if (raw.isNullOrBlank()) return emptySet()
+    return raw.split(",").map { it.trim() }.filter { it.isNotEmpty() }.toSet()
+  }
+
+  fun setSiteSecret(context: Context, host: String, secret: Boolean) {
+    val normalized = normalizeHost(host) ?: return
+    val current = getSecretSites(context).toMutableSet()
+    if (secret) {
+      current.add(normalized)
+    } else {
+      current.remove(normalized)
+    }
+    prefs(context).edit().putString(KEY_SECRET_SITES, current.joinToString(",")).apply()
+  }
+
+  /** Secret mode for a specific URL: global, per-app or per-site. */
+  fun isSecretForUrl(context: Context, referrerPackage: String?, url: String?): Boolean {
+    if (isSecret(context, referrerPackage)) return true
+    if (url.isNullOrBlank()) return false
+    val host = try {
+      Uri.parse(url).host?.lowercase()
+    } catch (_: Exception) {
+      null
+    } ?: return false
+    val sites = getSecretSites(context)
+    if (sites.contains(host)) return true
+    val parts = host.split('.')
+    if (parts.size > 2) {
+      return sites.contains(parts.drop(1).joinToString("."))
+    }
+    return false
+  }
+
+  // ----- v2.3.0: unified chooser items (methods + share apps) -----
+
+  private const val KEY_CHOOSER_ITEMS = "chooser_items_v2"
+  private const val KEY_CHOOSER_HIDDEN_V2 = "chooser_hidden_v2"
+  private const val KEY_CANCEL_PINNED = "chooser_cancel_pinned"
+
+  /**
+   * Builds the unified item list from the pre-2.3.0 storage (method
+   * order + hidden set + quick share targets) the first time it is
+   * read, and persists it so later reads are stable.
+   */
+  private fun migrateChooserItems(context: Context): List<ChooserItem> {
+    val methods = getChooserOrder(context)
+    val items = ArrayList<ChooserItem>()
+    for (method in methods) {
+      if (method == OpenMethod.CANCEL) continue
+      items.add(ChooserItem.MethodItem(method))
+    }
+    // The old quick share targets become share items, shown just
+    // above Cancel (they were active choices before).
+    for (pkg in getShareTargets(context)) {
+      items.add(ChooserItem.ShareItem(pkg))
+    }
+    items.add(ChooserItem.MethodItem(OpenMethod.CANCEL))
+    val oldHidden = getHiddenMethods(context)
+    val hiddenIds = if (prefs(context).contains(KEY_CHOOSER_HIDDEN)) {
+      oldHidden.map { ChooserItem.MethodItem(it).id }
+    } else {
+      // Fresh state: the two least-used methods start hidden (item 10).
+      listOf(
+        ChooserItem.MethodItem(OpenMethod.NORMAL_SECONDARY).id,
+        ChooserItem.MethodItem(OpenMethod.CUSTOM_TAB_SYSTEM).id
+      )
+    }
+    prefs(context).edit()
+      .putString(KEY_CHOOSER_ITEMS, items.joinToString(",") { it.id })
+      .putString(KEY_CHOOSER_HIDDEN_V2, hiddenIds.joinToString(","))
+      .apply()
+    return items
+  }
+
+  /** All chooser items in the user's order (methods and share apps). */
+  fun getChooserItems(context: Context): List<ChooserItem> {
+    val raw = prefs(context).getString(KEY_CHOOSER_ITEMS, null)
+    if (raw.isNullOrBlank()) return migrateChooserItems(context)
+    val parsed = raw.split(",")
+      .mapNotNull { ChooserItem.fromId(it.trim()) }
+      .distinctBy { it.id }
+    // Any method missing from the stored list (e.g. after an update)
+    // is appended before Cancel so nothing silently disappears.
+    val result = parsed.toMutableList()
+    val present = result.filterIsInstance<ChooserItem.MethodItem>().map { it.method }.toSet()
+    val missing = OpenMethod.CHOICES.filter { it !in present && it != OpenMethod.CANCEL }
+    if (missing.isNotEmpty()) {
+      val cancelIndex = result.indexOfFirst {
+        it is ChooserItem.MethodItem && it.method == OpenMethod.CANCEL
+      }
+      val insertAt = if (cancelIndex >= 0) cancelIndex else result.size
+      result.addAll(insertAt, missing.map { ChooserItem.MethodItem(it) })
+    }
+    if (result.none { it is ChooserItem.MethodItem && it.method == OpenMethod.CANCEL }) {
+      result.add(ChooserItem.MethodItem(OpenMethod.CANCEL))
+    }
+    return result
+  }
+
+  fun setChooserItems(context: Context, items: List<ChooserItem>) {
+    prefs(context).edit()
+      .putString(KEY_CHOOSER_ITEMS, items.joinToString(",") { it.id })
+      .apply()
+  }
+
+  /** Ids of chooser items currently hidden (below the divider). */
+  fun getHiddenChooserItemIds(context: Context): Set<String> {
+    if (prefs(context).getString(KEY_CHOOSER_ITEMS, null).isNullOrBlank()) {
+      getChooserItems(context)
+    }
+    val raw = prefs(context).getString(KEY_CHOOSER_HIDDEN_V2, null)
+    if (raw.isNullOrBlank()) return emptySet()
+    return raw.split(",").map { it.trim() }.filter { it.isNotEmpty() }.toSet()
+  }
+
+  fun setChooserItemHidden(context: Context, id: String, hidden: Boolean) {
+    val current = getHiddenChooserItemIds(context).toMutableSet()
+    if (hidden) {
+      current.add(id)
+    } else {
+      current.remove(id)
+    }
+    prefs(context).edit()
+      .putString(KEY_CHOOSER_HIDDEN_V2, current.joinToString(","))
+      .apply()
+  }
+
+  /** Chooser items the user sees: stored order, hidden ones removed. */
+  fun getVisibleChooserItems(context: Context): List<ChooserItem> {
+    val hidden = getHiddenChooserItemIds(context)
+    val visible = getChooserItems(context).filter { it.id !in hidden }
+    return visible.ifEmpty {
+      listOf(ChooserItem.MethodItem(OpenMethod.STAY_OVERLAY))
+    }
+  }
+
+  /**
+   * Whether Cancel stays pinned to the very bottom of the chooser.
+   * True until the user drags Cancel somewhere else themselves.
+   */
+  fun isCancelPinned(context: Context): Boolean {
+    return prefs(context).getBoolean(KEY_CANCEL_PINNED, true)
+  }
+
+  fun setCancelPinned(context: Context, pinned: Boolean) {
+    prefs(context).edit().putBoolean(KEY_CANCEL_PINNED, pinned).apply()
+  }
+
+  /**
+   * The order items appear in the chooser sheet: the stored order,
+   * with Cancel forced to the end while it is pinned.
+   */
+  fun getChooserDisplayItems(context: Context): List<ChooserItem> {
+    val visible = getVisibleChooserItems(context)
+    if (!isCancelPinned(context)) return visible
+    val cancel = visible.firstOrNull {
+      it is ChooserItem.MethodItem && it.method == OpenMethod.CANCEL
+    } ?: return visible
+    return visible.filter { it !== cancel } + cancel
   }
 
   // ----- v2.2.0: settings backup / restore -----

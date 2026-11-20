@@ -56,13 +56,18 @@ private val LightColorScheme = lightColorScheme(
 @Composable
 fun LynketTheme(
   darkTheme: Boolean = isSystemInDarkTheme(),
-  // Dynamic color is available on Android 12+
-  dynamicColor: Boolean = true,
+  // Dynamic color is available on Android 12+. When null, the user's
+  // "match device colors" preference decides (v2.3.0).
+  dynamicColor: Boolean? = null,
   content: @Composable () -> Unit
 ) {
+  val context = LocalContext.current
+  val useDynamicColor = dynamicColor
+    ?: androidx.compose.runtime.remember {
+      arun.com.chromer.customtab.LinkPreferences.isDynamicColor(context)
+    }
   val colorScheme = when {
-    dynamicColor && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> {
-      val context = LocalContext.current
+    useDynamicColor && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> {
       if (darkTheme) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
     }
     darkTheme -> DarkColorScheme

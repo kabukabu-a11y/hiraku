@@ -229,4 +229,38 @@
     <string name="overlay_find">Find in page</string>
     <string name="overlay_read_later">Read later</string>
     <string name="overlay_screenshot">Screenshot</string>
+
+    <!-- v2.3.0 -->
+    <string name="nav_apps">Apps</string>
+    <string name="settings_appearance">Appearance</string>
+    <string name="settings_glass">Glass effect</string>
+    <string name="settings_glass_desc">Only runs smoothly on some high-end devices</string>
+    <string name="settings_dynamic_color">Match device colors</string>
+    <string name="settings_dynamic_color_desc">Use the device theme colors in the app</string>
+    <string name="settings_theme">Theme</string>
+    <string name="theme_system">System</string>
+    <string name="theme_light">Light</string>
+    <string name="theme_dark">Dark</string>
+    <string name="settings_download">Downloads</string>
+    <string name="settings_download_app">App for downloads</string>
+    <string name="settings_download_app_desc">The app used when you tap a download link</string>
+    <string name="settings_system_default">System default</string>
+    <string name="secret_note">Even in secret mode, pages opened in your chosen browser (such as Chrome) stay in that browser history. To leave no history, use a stay-in-app method such as the overlay, or a private tab in the browser itself</string>
+    <string name="apps_sites_title">Apps and sites</string>
+    <string name="apps_tab_apps">Apps</string>
+    <string name="apps_tab_sites">Sites</string>
+    <string name="sites_add_top">Add a site</string>
+    <string name="tab_history">History</string>
+    <string name="tab_bookmarks">Bookmarks</string>
+    <string name="chooser_items_title">Chooser items</string>
+    <string name="chooser_items_desc">Drag to reorder. Items placed below the divider do not appear in the chooser</string>
+    <string name="chooser_items_shown">Shown</string>
+    <string name="chooser_items_hidden">Hidden</string>
+    <string name="chooser_items_add_app">Add a share app</string>
+    <string name="chooser_items_add_desc">Apps that can receive links can be picked directly as an open method</string>
+    <string name="settings_backup_desc_v2">Save or load your settings, per-app and per-site rules, history and read-later pages in one file</string>
+    <string name="download_started">Download started</string>
+    <string name="overlay_bookmark">Bookmark</string>
+    <string name="overlay_history">History</string>
+    <string name="overlay_share_row">Share</string>
 </resources>
