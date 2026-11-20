@@ -455,7 +455,7 @@ class OverlayService : Service() {
     var initialY = 0
     var initialRawX = 0f
     var initialRawY = 0f
-    (barTopRow ?: titleView)?.setOnTouchListener { v, event ->
+    titleView?.setOnTouchListener { v, event ->
       val wm = windowManager ?: return@setOnTouchListener false
       val r = rootView ?: return@setOnTouchListener false
       val p = layoutParams ?: return@setOnTouchListener false
@@ -944,42 +944,49 @@ class OverlayService : Service() {
   }
 
   private fun buildBar(): LinearLayout {
-    // v2.3.0: two rows. Top row: site icon + title + URL (dragging
-    // it moves the window). Bottom row: seven evenly spaced drawn
-    // icons. The whole bar is Liquid Glass.
     val bar = LinearLayout(this).apply {
-      orientation = LinearLayout.VERTICAL
-      setBackgroundColor(glassBarColor())
-      layoutParams = LinearLayout.LayoutParams(
-        ViewGroup.LayoutParams.MATCH_PARENT,
-        ViewGroup.LayoutParams.WRAP_CONTENT
-      )
-    }
-
-    val topRow = LinearLayout(this).apply {
       orientation = LinearLayout.HORIZONTAL
       gravity = Gravity.CENTER_VERTICAL
+      setBackgroundColor(BAR_COLOR)
       layoutParams = LinearLayout.LayoutParams(
         ViewGroup.LayoutParams.MATCH_PARENT,
-        dp(46)
+        dp(64)
       )
-      setPadding(dp(12), 0, dp(12), 0)
+      setPadding(dp(4), 0, dp(4), 0)
     }
-    val favicon = ImageView(this).apply {
-      layoutParams = LinearLayout.LayoutParams(dp(20), dp(20))
-      scaleType = ImageView.ScaleType.FIT_CENTER
+
+    val close = createBarButton("✕").apply {
+      setOnClickListener { closeOverlay() }
     }
+
+    // Turn the overlay into a bubble, right next to ✕. The glyph is a
+    // minimize-style dash since v2.2.0 (the ◎ was hard to read).
+    val toBubble = createBarButton("ー").apply {
+      contentDescription = getString(R.string.overlay_to_bubble)
+      setOnClickListener { convertToBubble() }
+    }
+
+    val back = createBarButton("◀").apply {
+      isEnabled = false
+      alpha = 0.4f
+      setOnClickListener {
+        if (webView?.canGoBack() == true) {
+          webView?.goBack()
+        }
+      }
+    }
+
     val titleColumn = LinearLayout(this).apply {
       orientation = LinearLayout.VERTICAL
       layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
-      setPadding(dp(8), 0, 0, 0)
+      setPadding(dp(6), 0, dp(6), 0)
     }
     val title = TextView(this).apply {
       setTextColor(Color.WHITE)
       text = currentUrl
       isSingleLine = true
       ellipsize = TextUtils.TruncateAt.END
-      textSize = 13f
+      textSize = 14f
     }
     val url = TextView(this).apply {
       setTextColor(0xFFBDC1C6.toInt())
@@ -990,44 +997,7 @@ class OverlayService : Service() {
     }
     titleColumn.addView(title)
     titleColumn.addView(url)
-    topRow.addView(favicon)
-    topRow.addView(titleColumn)
-    if (!isDarkMode()) {
-      title.setTextColor(0xFF202124.toInt())
-      url.setTextColor(0xFF5F6368.toInt())
-    }
 
-    val iconRow = LinearLayout(this).apply {
-      orientation = LinearLayout.HORIZONTAL
-      layoutParams = LinearLayout.LayoutParams(
-        ViewGroup.LayoutParams.MATCH_PARENT,
-        dp(52)
-      )
-    }
-
-    val close = createBarIconButton(R.drawable.ic_ov_close).apply {
-      contentDescription = getString(R.string.act_close)
-      setOnClickListener { closeOverlay() }
-    }
-    val toBubble = createBarIconButton(R.drawable.ic_ov_minimize).apply {
-      contentDescription = getString(R.string.overlay_to_bubble)
-      setOnClickListener { convertToBubble() }
-    }
-    val back = createBarIconButton(R.drawable.ic_ov_back).apply {
-      isEnabled = false
-      alpha = 0.4f
-      contentDescription = getString(R.string.act_back)
-      setOnClickListener {
-        if (webView?.canGoBack() == true) {
-          webView?.goBack()
-        }
-      }
-    }
-
-    // The AD chip keeps its cell like the other six items.
-    val shieldCell = FrameLayout(this).apply {
-      layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f)
-    }
     val shield = TextView(this).apply {
       text = "AD"
       setTextColor(Color.WHITE)
@@ -1038,8 +1008,9 @@ class OverlayService : Service() {
         cornerRadius = dp(8).toFloat()
         setColor(0xFF5F6368.toInt())
       }
-      layoutParams = FrameLayout.LayoutParams(dp(38), dp(28)).apply {
-        gravity = Gravity.CENTER
+      layoutParams = LinearLayout.LayoutParams(dp(38), dp(28)).apply {
+        marginStart = dp(2)
+        marginEnd = dp(2)
       }
       setOnClickListener {
         toggleAdBlock()
@@ -1047,69 +1018,48 @@ class OverlayService : Service() {
     }
     val shieldCount = TextView(this).apply {
       setTextColor(0xFF8AB4F8.toInt())
-      textSize = 10f
+      textSize = 11f
       visibility = View.GONE
-      layoutParams = FrameLayout.LayoutParams(
-        ViewGroup.LayoutParams.WRAP_CONTENT,
-        ViewGroup.LayoutParams.WRAP_CONTENT
-      ).apply {
-        gravity = Gravity.TOP or Gravity.END
-        marginEnd = dp(6)
-        topMargin = dp(4)
-      }
     }
-    shieldCell.addView(shield)
-    shieldCell.addView(shieldCount)
 
-    val reload = createBarIconButton(R.drawable.ic_ov_reload).apply {
-      contentDescription = getString(R.string.act_reload)
+    val reload = createBarButton("⟳").apply {
       setOnClickListener { webView?.reload() }
     }
-    val expand = createBarIconButton(R.drawable.ic_ov_expand).apply {
-      contentDescription = getString(R.string.overlay_expand)
+
+    val expand = createBarButton("⤢").apply {
       setOnClickListener { togglePeek() }
     }
-    val menu = createBarIconButton(R.drawable.ic_ov_more).apply {
-      contentDescription = getString(R.string.act_menu)
+
+    val menu = createBarButton("︙").apply {
       setOnClickListener { showMenu(this) }
     }
 
-    iconRow.addView(close)
-    iconRow.addView(toBubble)
-    iconRow.addView(back)
-    iconRow.addView(shieldCell)
-    iconRow.addView(reload)
-    iconRow.addView(expand)
-    iconRow.addView(menu)
-
-    bar.addView(topRow)
-    bar.addView(iconRow)
+    bar.addView(close)
+    bar.addView(toBubble)
+    bar.addView(back)
+    bar.addView(titleColumn)
+    bar.addView(shield)
+    bar.addView(shieldCount)
+    bar.addView(reload)
+    bar.addView(expand)
+    bar.addView(menu)
 
     titleView = title
     urlView = url
     backButton = back
-    faviconView = favicon
-    barTopRow = topRow
     shieldView = shield
     shieldCountView = shieldCount
     updateShield()
     return bar
   }
 
-  /** One cell of the bar's icon row: a drawn vector icon, evenly sized. */
-  private fun createBarIconButton(drawableRes: Int): ImageView {
-    return ImageView(this).apply {
-      setImageResource(drawableRes)
-      scaleType = ImageView.ScaleType.CENTER_INSIDE
-      setPadding(dp(11), dp(11), dp(11), dp(11))
-      layoutParams = LinearLayout.LayoutParams(
-        0,
-        ViewGroup.LayoutParams.MATCH_PARENT,
-        1f
-      )
-      if (!isDarkMode()) {
-        setColorFilter(0xFF202124.toInt())
-      }
+  private fun createBarButton(label: String): TextView {
+    return TextView(this).apply {
+      text = label
+      setTextColor(Color.WHITE)
+      textSize = 19f
+      gravity = Gravity.CENTER
+      layoutParams = LinearLayout.LayoutParams(dp(44), ViewGroup.LayoutParams.MATCH_PARENT)
     }
   }
 
