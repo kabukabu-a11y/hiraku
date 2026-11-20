@@ -349,7 +349,15 @@ fun HirakuBottomBar(
                 setTintColorGreen(1f)
                 setTintColorBlue(1f)
                 setTintAlpha(0.10f)
-                setBlurRadius(24f)
+                // Same small-capsule tuning as the chooser
+                // pill (v2.3.13 item 106): the library's
+                // default refraction offset (-70dp) and
+                // dispersion (0.5) are made for large panels.
+                setBlurRadius(12f)
+                val density = ctx.resources.displayMetrics.density
+                setRefractionHeight(14 * density)
+                setRefractionOffset(-20 * density)
+                setDispersion(0.2f)
                 isClickable = false
                 isFocusable = false
                 post { bind(pillGlassSource) }

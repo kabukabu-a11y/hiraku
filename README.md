@@ -26,6 +26,13 @@ After installing, set Hiraku as your default browser so links from other apps ar
 - **URL security check (v2.1.0)**: warns before opening suspicious links (IP-address hosts, punycode domains, URLs with embedded user info). Can be turned off.
 - **And more**: article mode, tabs & history, desktop site toggle, a dedicated settings screen, and a Japanese / English UI (Settings → Language).
 
+## What's new in v2.3.13
+
+Includes v2.3.11 and v2.3.12 below (v2.3.11's build broke on a file-editing accident on our side; repaired here), plus:
+
+- **The overlay bar's glass now reaches the window's edge**: with the bar at the bottom, the glass surface extends over the size-handle strip too — no more gap between the bar UI and the window frame.
+- **Gentler glass on the small pills**: the chooser's follow pill (and the main bar's pill) used the library's large-panel defaults, which smeared the row icon into a rainbow streak and washed the label out while holding a drag. Refraction, dispersion and blur are now tuned for a small capsule.
+
 ## What's new in v2.3.12
 
 Includes v2.3.11 below, plus:
@@ -169,6 +176,13 @@ The ad-blocking list is built from the public [pgl.yoyo.org adservers](https://p
 - **共有先アプリを選択画面に（v2.3.0）**：クイック共有は廃止し、共有を受け付けるアプリが選択画面に「開き方」として直接並ぶようになりました（設定で追加・削除できます）
 - **URLセキュリティチェック（v2.1.0）**：IPアドレスへのリンク、国際化ドメイン（xn--）、ユーザー情報を含むURLなど、怪しいリンクを開く前に警告します（OFFにもできます）
 - **その他**：記事モード、タブと履歴、デスクトップサイト切替、細かい設定を集約した設定画面、日本語／英語の表示切替（設定 → 言語）
+
+## v2.3.13の新機能
+
+下のv2.3.11・v2.3.12の内容を含みます（v2.3.11はこちらのファイル編集ミスでビルドが壊れたため、ここで直しました）。追加分：
+
+- **オーバーレイのバーのガラスが窓の縁まで届くように**：バーが下にあるとき、サイズハンドルの帯の部分までガラスが続くようになりました。バーのUIと窓の縁の間の隙間がなくなります
+- **小さいピルのガラスを穏やかに**：選択シートの追従ピル（とメインバーのピル）がライブラリの大きなパネル向け初期値のままで、長押しドラッグ中にアイコンが虹色に滲んで文字が白く抜けていました。屈折・色分散・ぼかしを小さいカプセル向けに調整しました
 
 ## v2.3.12の新機能
 

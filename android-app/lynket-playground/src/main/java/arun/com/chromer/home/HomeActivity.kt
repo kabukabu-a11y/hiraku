@@ -1,4 +1,3 @@
-    root.post { glassView.bind(contentView) }
 /*
  *
  *  Lynket

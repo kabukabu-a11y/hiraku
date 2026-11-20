@@ -475,12 +475,21 @@ class OverlayService : Service() {
       LinkPreferences.isGlassEnabled(this)
     ) {
       val gv = LiquidGlassView(this).apply {
+        // v2.3.13 (item 105): with the bar at the bottom, the
+        // glass runs all the way to the window's edge,
+        // covering the size-band strip too — the user saw a
+        // gap between the bar's glass and the window frame
+        // and asked for one continuous surface. The bar's
+        // content keeps its band-height offset; only the
+        // glass extends.
         layoutParams = FrameLayout.LayoutParams(
           ViewGroup.LayoutParams.MATCH_PARENT,
-          dp(BAR_TOP_ROW_DP + BAR_ICON_ROW_DP)
+          dp(
+            BAR_TOP_ROW_DP + BAR_ICON_ROW_DP +
+              if (barOnTop) 0 else SIZE_BAND_DP
+          )
         ).apply {
           gravity = if (barOnTop) Gravity.TOP else Gravity.BOTTOM
-          if (!barOnTop) bottomMargin = dp(SIZE_BAND_DP)
         }
         setCornerRadius(0f)
         setTintColorRed(28f / 255f)

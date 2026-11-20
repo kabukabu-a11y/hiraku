@@ -260,8 +260,17 @@ class LinkHandlerActivity : ComponentActivity() {
           setTintColorRed(1f)
           setTintColorGreen(1f)
           setTintColorBlue(1f)
-          setTintAlpha(0.13f)
-          setBlurRadius(24f)
+          setTintAlpha(0.10f)
+          // v2.3.13 (item 106): gentler tuning for a small
+          // capsule. The library defaults (refraction offset
+          // -70dp, dispersion 0.5, and this call's old blur
+          // 24) smeared the row icon into a rainbow streak
+          // and washed the label out while holding a drag.
+          setBlurRadius(8f)
+          val density = resources.displayMetrics.density
+          setRefractionHeight(12 * density)
+          setRefractionOffset(-18 * density)
+          setDispersion(0.15f)
         }
         root.addView(composeView)
         root.addView(glass)
