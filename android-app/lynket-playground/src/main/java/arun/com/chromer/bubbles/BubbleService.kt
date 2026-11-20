@@ -238,9 +238,6 @@ class BubbleService : Service() {
     windowManager.addView(view, params)
     relayoutBubbles()
     updateNotification()
-    if (!host.isNullOrBlank()) {
-      loadSiteVisuals(item, host, BUBBLE_PALETTE[colorIndex])
-    }
   }
 
   /** The site color as bubble glass: translucent while glass is on. */
@@ -258,76 +255,6 @@ class BubbleService : Service() {
       0.587 * Color.green(color) +
       0.114 * Color.blue(color)) / 255.0
     return if (luminance > 0.62) 0xFF202124.toInt() else Color.WHITE
-  }
-
-  /**
-   * Fetches the site's favicon off the main thread: the badge shows
-   * it, and its dominant color retints the bubble glass.
-   */
-  private fun loadSiteVisuals(item: BubbleItem, host: String, fallbackColor: Int) {
-    Thread {
-      val bitmap = try {
-        val connection = URL(
-          "https://www.google.com/s2/favicons?domain=$host&sz=128"
-        ).openConnection() as HttpURLConnection
-        connection.connectTimeout = 2500
-        connection.readTimeout = 2500
-        connection.inputStream.use { BitmapFactory.decodeStream(it) }
-      } catch (_: Exception) {
-        null
-      }
-      if (bitmap != null) {
-        val dominant = dominantColor(bitmap)
-        mainHandler.post {
-          if (bubbles.contains(item)) {
-            item.badgeImage?.setImageBitmap(bitmap)
-            item.badgeImage?.visibility = View.VISIBLE
-            item.badgeLetter?.visibility = View.GONE
-            if (dominant != null) {
-              val glassOn = LinkPreferences.isGlassEnabled(this@BubbleService)
-              item.background?.setColor(tintedColor(dominant, glassOn))
-              item.letterView?.setTextColor(contrastColor(dominant))
-            }
-          }
-        }
-      }
-    }.start()
-  }
-
-  /** Average of the bitmap's opaque pixels, ignoring near-white ones. */
-  private fun dominantColor(bitmap: Bitmap): Int? {
-    var red = 0L
-    var green = 0L
-    var blue = 0L
-    var count = 0L
-    val step = maxOf(1, minOf(bitmap.width, bitmap.height) / 16)
-    var x = 0
-    while (x < bitmap.width) {
-      var y = 0
-      while (y < bitmap.height) {
-        val pixel = bitmap.getPixel(x, y)
-        if (Color.alpha(pixel) >= 200) {
-          val r = Color.red(pixel)
-          val g = Color.green(pixel)
-          val b = Color.blue(pixel)
-          // Skip near-white / near-black noise (favicon padding).
-          if (!(r > 242 && g > 242 && b > 242) && !(r < 14 && g < 14 && b < 14)) {
-            red += r
-            green += g
-            blue += b
-            count++
-          }
-        }
-        y += step
-      }
-      x += step
-    }
-    if (count == 0L) return null
-    return Color.rgb(
-      (red / count).toInt(),
-      (green / count).toInt(),
-      (blue / count).toInt()
-    )
   }
 
   @SuppressLint("ClickableViewAccessibility")
