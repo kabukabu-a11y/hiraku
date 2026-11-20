@@ -30,7 +30,7 @@ After installing, set Hiraku as your default browser so links from other apps ar
 
 - **Crash when adjusting the overlay window — fixed**: v2.3.3 paused the backdrop blur during drags by removing and re-adding the whole window, and on ColorOS that crashed the service as soon as a resize or move started. Drag-time blur flips now only update the window's layout params in place; the re-attach remains only for passthrough transitions, which happen outside any drag.
 - **Menu and close buttons dead on phone-size windows — fixed**: the new bottom corner grips overlapped the bar's corner buttons and swallowed their taps. A grip now only takes touches that start in the outermost 14dp corner sliver; every other tap falls through to the button underneath.
-- **Known issue**: the home-gesture problem (the system home gesture not responding while Hiraku is in use) is still under investigation and is NOT fixed in this release.
+- **"Can't get back to Home" — the real cause, fixed**: after visiting the Apps tab, the bottom bar's pill moved but the screen never switched, so the Home tab could not be reached again (this was misread for three releases as a system home-gesture problem — it is the in-app Home tab). The tab switcher used AnimatedContent, whose transition never completed once the Apps screen kept changing size while its list loaded, wedging every later switch. Tab content is now composed directly per tab with a small enter animation that cannot wedge.
 
 ## What's new in v2.3.3
 
@@ -129,7 +129,7 @@ The ad-blocking list is built from the public [pgl.yoyo.org adservers](https://p
 
 - **オーバーレイの調節で落ちる問題を修正**：v2.3.3ではドラッグ中のぼかし停止で窓全体を付け直していたため、ColorOSではリサイズや移動を始めた途端にサービスが落ちていました。ドラッグ中のぼかしの切り替えはレイアウトパラメータの更新だけにし、付け直しはドラッグの外で起きるパススルー切り替えの時だけに限定しました
 - **スマホサイズで設定ボタン等が押せない問題を修正**：下の角グリップがバーの角のボタン（✕と⋮）に被さってタップを奪っていました。グリップが取るのは角の外側14dpで始まるタッチだけにし、それ以外のタップは下のボタンへ通すようにしました
-- **既知の問題**：ホームジェスチャが効かない問題は調査中で、この版ではまだ直っていません
+- **「ホームに戻れない」の本当の原因を修正**：アプリタブを開いたあと、下バーのピルだけが動いて画面が切り替わらず、ホームタブに戻れなくなっていました（3版にわたり端末のホームジェスチャの問題と読み違えていましたが、アプリ内のホームタブの話でした）。タブ切り替えに使っていたAnimatedContentは、アプリ一覧の読み込みで画面サイズが変わり続けるアプリタブが絡むと切り替えが完了しないまま固まるため、タブごとに直接表示＋小さな入場アニメーションに置き換えました
 
 ## v2.3.3の新機能
 

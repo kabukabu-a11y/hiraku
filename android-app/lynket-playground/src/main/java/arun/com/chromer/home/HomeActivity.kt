@@ -31,16 +31,8 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.EnterTransition
-import androidx.compose.animation.ExitTransition
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.spring
-import androidx.compose.animation.core.tween
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.slideInHorizontally
-import androidx.compose.animation.slideOutHorizontally
-import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -77,6 +69,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -84,12 +77,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
@@ -182,47 +175,57 @@ private fun HomeHost(
   val context = LocalContext.current
   val animLevel = remember { LinkPreferences.getAnimLevel(context) }
   Box(modifier = Modifier.fillMaxSize()) {
-    AnimatedContent(
-      targetState = tab,
-      transitionSpec = {
-        if (animLevel == LinkPreferences.ANIM_OFF) {
-          EnterTransition.None togetherWith ExitTransition.None
-        } else {
-          // Tab switches ride the iOS CollapseSpring stiffness
-          // (response 0.3) instead of fixed tweens (v2.3.2
-          // item 78c).
-          val direction = if (targetState > initialState) 1 else -1
-          val stiffness = IosMotion.stiffnessForResponse(0.3f)
-          val slideSpring = spring<IntOffset>(
-            dampingRatio = 1f,
-            stiffness = stiffness
+    // v2.3.4 (item 80 — the actual root cause): tab content used
+    // to switch through AnimatedContent. On the user's device,
+    // after visiting the Apps tab the switch stopped working:
+    // the bar's pill still moved to the tapped tab, but the
+    // screen never changed and the Home tab could not be reached
+    // again. The Apps screen changes size while its list loads,
+    // so the AnimatedContent transition (slide/fade springs plus
+    // the default size transform) kept re-targeting and never
+    // completed, wedging every later switch behind it. (This was
+    // misread for three releases as a system home-gesture
+    // problem; it is the in-app Home tab that never loads.)
+    // Tab content is now composed directly per tab, with only a
+    // small keyed enter animation (fade + slight slide, iOS
+    // CollapseSpring stiffness, response 0.3) that has no shared
+    // transition state and cannot wedge.
+    var prevTab by remember { mutableIntStateOf(tab) }
+    val direction = if (tab >= prevTab) 1 else -1
+    LaunchedEffect(tab) { prevTab = tab }
+    key(tab) {
+      val progress = remember {
+        Animatable(if (animLevel == LinkPreferences.ANIM_OFF) 1f else 0f)
+      }
+      LaunchedEffect(Unit) {
+        if (animLevel != LinkPreferences.ANIM_OFF) {
+          progress.animateTo(
+            1f,
+            spring(
+              dampingRatio = 1f,
+              stiffness = IosMotion.stiffnessForResponse(0.3f)
+            )
           )
-          val fadeSpring = spring<Float>(
-            dampingRatio = 1f,
-            stiffness = stiffness
-          )
-          val enter = slideInHorizontally(
-            animationSpec = slideSpring,
-            initialOffsetX = { it / 3 * direction }
-          ) + fadeIn(fadeSpring)
-          val exit = slideOutHorizontally(
-            animationSpec = slideSpring,
-            targetOffsetX = { -it / 3 * direction }
-          ) + fadeOut(fadeSpring)
-          enter togetherWith exit
         }
-      },
-      label = "homeTabs"
-    ) { current ->
-      when (current) {
-        0 -> HomeTab(onOpenUrl = onOpenUrl)
-        1 -> AppsSitesTab()
-        2 -> HistoryTab()
-        else -> SettingsScreen(
-          onBack = {},
-          showBack = false,
-          showBottomBar = false
-        )
+      }
+      Box(
+        modifier = Modifier
+          .fillMaxSize()
+          .graphicsLayer {
+            alpha = progress.value
+            translationX = (1f - progress.value) * direction * 24.dp.toPx()
+          }
+      ) {
+        when (tab) {
+          0 -> HomeTab(onOpenUrl = onOpenUrl)
+          1 -> AppsSitesTab()
+          2 -> HistoryTab()
+          else -> SettingsScreen(
+            onBack = {},
+            showBack = false,
+            showBottomBar = false
+          )
+        }
       }
     }
     HirakuBottomBar(
