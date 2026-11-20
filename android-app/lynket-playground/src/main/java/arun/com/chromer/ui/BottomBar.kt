@@ -269,15 +269,22 @@ fun HirakuBottomBar(
             if (glassOn) {
               Modifier
                 .background(
+                  // v2.3.3 (item 84): the fill is now nearly
+                  // flat. The old 0.17 -> 0.09 gradient's bright
+                  // band, compressed by the scaleY squash while
+                  // pressing/travelling, read as a white line
+                  // across the pressed item; a near-uniform fill
+                  // has no band to compress. The motion (springs
+                  // and squash amounts) is unchanged.
                   Brush.verticalGradient(
                     listOf(
-                      Color.White.copy(alpha = 0.17f),
-                      Color.White.copy(alpha = 0.09f)
+                      Color.White.copy(alpha = 0.13f),
+                      Color.White.copy(alpha = 0.11f)
                     )
                   ),
                   indicatorShape
                 )
-                .border(1.dp, Color.White.copy(alpha = 0.17f), indicatorShape)
+                .border(1.dp, Color.White.copy(alpha = 0.10f), indicatorShape)
             } else {
               Modifier.background(
                 MaterialTheme.colorScheme.primary,
