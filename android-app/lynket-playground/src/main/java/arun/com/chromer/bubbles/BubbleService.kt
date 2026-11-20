@@ -29,6 +29,8 @@ import android.app.Service
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.graphics.Color
 import android.graphics.PixelFormat
 import android.graphics.Typeface
@@ -39,15 +41,21 @@ import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
 import android.view.Gravity
+import android.view.HapticFeedbackConstants
 import android.view.MotionEvent
 import android.view.View
 import android.view.WindowManager
+import android.widget.FrameLayout
+import android.widget.ImageView
 import android.widget.TextView
 import arun.com.chromer.R
 import arun.com.chromer.browser.BrowserActivity
 import arun.com.chromer.customtab.LinkPreferences
 import arun.com.chromer.home.HomeActivity
 import arun.com.chromer.overlay.OverlayService
+import arun.com.chromer.ui.glassViewColor
+import java.net.HttpURLConnection
+import java.net.URL
 import kotlin.math.abs
 import kotlin.math.hypot
 
@@ -57,7 +65,11 @@ class BubbleService : Service() {
     val url: String,
     val view: View,
     val params: WindowManager.LayoutParams,
-    val secret: Boolean = false
+    val secret: Boolean = false,
+    var background: GradientDrawable? = null,
+    var letterView: TextView? = null,
+    var badgeImage: ImageView? = null,
+    var badgeLetter: TextView? = null
   )
 
   private lateinit var windowManager: WindowManager
@@ -65,7 +77,9 @@ class BubbleService : Service() {
   // Top edge of the bubble stack; restored from the remembered
   // position when the memory setting is on (v2.1.0).
   private var stackBaseY: Int = -1
-  private var trashView: TextView? = null
+  private var trashView: View? = null
+  private var trashHot: Boolean = false
+  private val mainHandler = Handler(Looper.getMainLooper())
   private var isTrashShown = false
 
   override fun onCreate() {
@@ -130,20 +144,60 @@ class BubbleService : Service() {
     } else {
       (host.hashCode() and Int.MAX_VALUE) % BUBBLE_PALETTE.size
     }
+    val glassOn = LinkPreferences.isGlassEnabled(this)
 
+    // v2.3.0: the whole bubble is glass tinted with the site color;
+    // only the center letter uses a contrasting color. A small
+    // favicon badge sits at the bottom-right.
     val background = GradientDrawable().apply {
       shape = GradientDrawable.OVAL
-      setColor(BUBBLE_PALETTE[colorIndex])
+      setColor(tintedColor(BUBBLE_PALETTE[colorIndex], glassOn))
+      setStroke(dp(1), 0x66FFFFFF)
     }
-
-    val view = TextView(this).apply {
+    val letterView = TextView(this).apply {
       gravity = Gravity.CENTER
-      setTextColor(Color.WHITE)
+      setTextColor(contrastColor(BUBBLE_PALETTE[colorIndex]))
       typeface = Typeface.DEFAULT_BOLD
       textSize = 22f
       text = letter
+      layoutParams = FrameLayout.LayoutParams(
+        FrameLayout.LayoutParams.MATCH_PARENT,
+        FrameLayout.LayoutParams.MATCH_PARENT
+      )
+    }
+    val badgeLetter = TextView(this).apply {
+      gravity = Gravity.CENTER
+      setTextColor(Color.WHITE)
+      typeface = Typeface.DEFAULT_BOLD
+      textSize = 10f
+      text = letter
+    }
+    val badgeImage = ImageView(this).apply {
+      scaleType = ImageView.ScaleType.CENTER_CROP
+      visibility = View.GONE
+      layoutParams = FrameLayout.LayoutParams(
+        FrameLayout.LayoutParams.MATCH_PARENT,
+        FrameLayout.LayoutParams.MATCH_PARENT
+      )
+    }
+    val badge = FrameLayout(this).apply {
+      background = GradientDrawable().apply {
+        shape = GradientDrawable.OVAL
+        setColor(BUBBLE_PALETTE[colorIndex])
+        setStroke(dp(1), 0x88FFFFFF.toInt())
+      }
+      clipToOutline = true
+      layoutParams = FrameLayout.LayoutParams(dp(20), dp(20)).apply {
+        gravity = Gravity.BOTTOM or Gravity.END
+      }
+      addView(badgeLetter)
+      addView(badgeImage)
+    }
+    val view = FrameLayout(this).apply {
       this.background = background
       elevation = dp(4).toFloat()
+      addView(letterView)
+      addView(badge)
     }
 
     val params = WindowManager.LayoutParams(
@@ -163,12 +217,109 @@ class BubbleService : Service() {
       y = stackBaseY + bubbles.size * (size + dp(8))
     }
 
-    val item = BubbleItem(url = url, view = view, params = params, secret = secret)
+    val item = BubbleItem(
+      url = url,
+      view = view,
+      params = params,
+      secret = secret,
+      background = background,
+      letterView = letterView,
+      badgeImage = badgeImage,
+      badgeLetter = badgeLetter
+    )
     setupTouchListener(item)
     bubbles.add(item)
     windowManager.addView(view, params)
     relayoutBubbles()
     updateNotification()
+    if (!host.isNullOrBlank()) {
+      loadSiteVisuals(item, host, BUBBLE_PALETTE[colorIndex])
+    }
+  }
+
+  /** The site color as bubble glass: translucent while glass is on. */
+  private fun tintedColor(color: Int, glassOn: Boolean): Int {
+    return if (glassOn) {
+      Color.argb(225, Color.red(color), Color.green(color), Color.blue(color))
+    } else {
+      color
+    }
+  }
+
+  /** A letter color that stays readable on the given site color. */
+  private fun contrastColor(color: Int): Int {
+    val luminance = (0.299 * Color.red(color) +
+      0.587 * Color.green(color) +
+      0.114 * Color.blue(color)) / 255.0
+    return if (luminance > 0.62) 0xFF202124.toInt() else Color.WHITE
+  }
+
+  /**
+   * Fetches the site's favicon off the main thread: the badge shows
+   * it, and its dominant color retints the bubble glass.
+   */
+  private fun loadSiteVisuals(item: BubbleItem, host: String, fallbackColor: Int) {
+    Thread {
+      val bitmap = try {
+        val connection = URL(
+          "https://www.google.com/s2/favicons?domain=$host&sz=128"
+        ).openConnection() as HttpURLConnection
+        connection.connectTimeout = 2500
+        connection.readTimeout = 2500
+        connection.inputStream.use { BitmapFactory.decodeStream(it) }
+      } catch (_: Exception) {
+        null
+      }
+      if (bitmap == null) return@Thread
+      val dominant = dominantColor(bitmap)
+      mainHandler.post {
+        if (!bubbles.contains(item)) return@post
+        item.badgeImage?.setImageBitmap(bitmap)
+        item.badgeImage?.visibility = View.VISIBLE
+        item.badgeLetter?.visibility = View.GONE
+        if (dominant != null) {
+          val glassOn = LinkPreferences.isGlassEnabled(this@BubbleService)
+          item.background?.setColor(tintedColor(dominant, glassOn))
+          item.letterView?.setTextColor(contrastColor(dominant))
+        }
+      }
+    }.start()
+  }
+
+  /** Average of the bitmap's opaque pixels, ignoring near-white ones. */
+  private fun dominantColor(bitmap: Bitmap): Int? {
+    var red = 0L
+    var green = 0L
+    var blue = 0L
+    var count = 0L
+    val step = maxOf(1, minOf(bitmap.width, bitmap.height) / 16)
+    var x = 0
+    while (x < bitmap.width) {
+      var y = 0
+      while (y < bitmap.height) {
+        val pixel = bitmap.getPixel(x, y)
+        if (Color.alpha(pixel) >= 200) {
+          val r = Color.red(pixel)
+          val g = Color.green(pixel)
+          val b = Color.blue(pixel)
+          // Skip near-white / near-black noise (favicon padding).
+          if (!(r > 242 && g > 242 && b > 242) && !(r < 14 && g < 14 && b < 14)) {
+            red += r
+            green += g
+            blue += b
+            count++
+          }
+        }
+        y += step
+      }
+      x += step
+    }
+    if (count == 0L) return null
+    return Color.rgb(
+      (red / count).toInt(),
+      (green / count).toInt(),
+      (blue / count).toInt()
+    )
   }
 
   @SuppressLint("ClickableViewAccessibility")
@@ -215,11 +366,22 @@ class BubbleService : Service() {
           }
           if (moved) {
             showTrash()
+            val metrics = resources.displayMetrics
+            val bubbleCenterX = item.params.x + size / 2
+            val bubbleCenterY = item.params.y + size / 2
+            val trashCenterX = metrics.widthPixels / 2
+            val trashCenterY = metrics.heightPixels - dp(24) - dp(TRASH_SIZE_DP) / 2
+            val distance = hypot(
+              (bubbleCenterX - trashCenterX).toDouble(),
+              (bubbleCenterY - trashCenterY).toDouble()
+            )
+            setTrashHot(distance <= dp(80), item.view)
           }
           true
         }
         MotionEvent.ACTION_UP -> {
           handler.removeCallbacks(longPressRunnable)
+          setTrashHot(false, item.view)
           hideTrash()
           if (longPressed) {
             // Preview already opened; keep the bubble where it is.
@@ -228,16 +390,9 @@ class BubbleService : Service() {
           } else {
             val metrics = resources.displayMetrics
             val screenWidth = metrics.widthPixels
-            val screenHeight = metrics.heightPixels
             val bubbleCenterX = item.params.x + size / 2
-            val bubbleCenterY = item.params.y + size / 2
-            val trashCenterX = screenWidth / 2
-            val trashCenterY = screenHeight - dp(24) - dp(TRASH_SIZE_DP) / 2
-            val distance = hypot(
-              (bubbleCenterX - trashCenterX).toDouble(),
-              (bubbleCenterY - trashCenterY).toDouble()
-            )
-            if (distance <= dp(80)) {
+            if (trashHot) {
+              setTrashHot(false, item.view)
               removeBubble(item)
             } else {
               val toLeft = bubbleCenterX < screenWidth / 2
@@ -262,6 +417,7 @@ class BubbleService : Service() {
         }
         MotionEvent.ACTION_CANCEL -> {
           handler.removeCallbacks(longPressRunnable)
+          setTrashHot(false, item.view)
           hideTrash()
           true
         }
@@ -282,18 +438,42 @@ class BubbleService : Service() {
     }
   }
 
+  /** Highlights the trash target (red + haptic) while a bubble hovers it. */
+  private fun setTrashHot(hot: Boolean, anchor: View) {
+    if (trashHot == hot) return
+    trashHot = hot
+    val drawable = (trashView as? FrameLayout)?.background as? GradientDrawable
+    drawable?.setColor(
+      if (hot) {
+        0xE6FF3B30.toInt()
+      } else {
+        glassViewColor(true, LinkPreferences.isGlassEnabled(this))
+      }
+    )
+    if (hot) {
+      try {
+        anchor.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
+      } catch (_: Exception) {
+      }
+    }
+  }
+
   private fun showTrash() {
     if (isTrashShown) return
     val size = dp(TRASH_SIZE_DP)
-    val view = trashView ?: TextView(this).apply {
-      text = "✕"
-      setTextColor(Color.WHITE)
-      textSize = 28f
-      gravity = Gravity.CENTER
+    val view = trashView ?: FrameLayout(this).apply {
       background = GradientDrawable().apply {
         shape = GradientDrawable.OVAL
-        setColor(0xCC424242.toInt())
+        setColor(glassViewColor(true, LinkPreferences.isGlassEnabled(this@BubbleService)))
+        setStroke(dp(1), 0x66FFFFFF)
       }
+      val icon = ImageView(this@BubbleService).apply {
+        setImageResource(R.drawable.ic_ov_close)
+        layoutParams = FrameLayout.LayoutParams(dp(26), dp(26)).apply {
+          gravity = Gravity.CENTER
+        }
+      }
+      addView(icon)
     }.also { trashView = it }
 
     val params = WindowManager.LayoutParams(
@@ -325,10 +505,13 @@ class BubbleService : Service() {
   }
 
   private fun openBubble(item: BubbleItem) {
+    val size = dp(BUBBLE_SIZE_DP)
+    val fromRect = intArrayOf(item.params.x, item.params.y, size, size)
     removeBubble(item)
     // Tapping a bubble opens the overlay window directly, staying on
     // top of the current app instead of switching to a full activity.
-    if (OverlayService.open(this, item.url, secret = item.secret)) {
+    // The window grows out of the bubble along a curve (v2.3.0).
+    if (OverlayService.open(this, item.url, secret = item.secret, fromRect = fromRect)) {
       return
     }
     val intent = BrowserActivity.createDirectIntent(this, item.url, item.secret)
@@ -343,7 +526,16 @@ class BubbleService : Service() {
       openBubble(item)
       return
     }
-    if (!OverlayService.open(this, item.url, peek = true, secret = item.secret)) {
+    val size = dp(BUBBLE_SIZE_DP)
+    val fromRect = intArrayOf(item.params.x, item.params.y, size, size)
+    if (!OverlayService.open(
+        this,
+        item.url,
+        peek = true,
+        secret = item.secret,
+        fromRect = fromRect
+      )
+    ) {
       openBubble(item)
     }
   }
