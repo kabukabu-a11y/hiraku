@@ -79,11 +79,9 @@ kotlin {
 // incompatible with the K2 compiler and the language version will
 // be overridden to 1.9" and pins the language version to 1.9,
 // which the Kotlin 2.4 compiler rejects outright
-// (UNSUPPORTED_LANGUAGE_VERSION). Force 2.4 on every Kotlin
-// compile task. KotlinCompileTask is the abstract base of both
-// the regular compile tasks and the kapt tasks, so the kapt
-// worker's stub compilation is covered as well.
-tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompileTask>().configureEach {
+// (UNSUPPORTED_LANGUAGE_VERSION in kaptGenerateStubs). Force 2.4
+// on every Kotlin compile task, kapt stubs included.
+tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach {
   compilerOptions {
     languageVersion.set(org.jetbrains.kotlin.gradle.dsl.KotlinVersion.KOTLIN_2_4)
     apiVersion.set(org.jetbrains.kotlin.gradle.dsl.KotlinVersion.KOTLIN_2_4)
