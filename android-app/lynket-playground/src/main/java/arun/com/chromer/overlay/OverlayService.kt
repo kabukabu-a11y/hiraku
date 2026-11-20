@@ -671,6 +671,10 @@ class OverlayService : Service() {
     }
 
 
+    // v2.3.0: a subtle move handle pill overlapping the page at
+    // the edge opposite the bar (no dedicated band).
+    addMoveHandle(root, barOnTop, screenWidth, screenHeight)
+
     root.setOnKeyListener { _, keyCode, event ->
       if (keyCode == KeyEvent.KEYCODE_BACK && event.action == KeyEvent.ACTION_UP) {
         val currentWebView = webView
@@ -699,6 +703,75 @@ class OverlayService : Service() {
     windowManager?.addView(root, params)
     root.requestFocus()
     wv.loadUrl(initialUrl)
+  }
+
+  /**
+   * The subtle move handle (v2.3.0): a small translucent pill
+   * overlapping the page at the edge opposite the bar. Dragging
+   * it moves the window, like dragging the bar's top row.
+   */
+  @SuppressLint("ClickableViewAccessibility")
+  private fun addMoveHandle(
+    root: FrameLayout,
+    barOnTop: Boolean,
+    screenWidth: Int,
+    screenHeight: Int
+  ) {
+    val handle = View(this)
+    handle.background = GradientDrawable().apply {
+      shape = GradientDrawable.RECTANGLE
+      cornerRadius = dp(3).toFloat()
+      setColor(0x59FFFFFF)
+    }
+    val lp = FrameLayout.LayoutParams(dp(40), dp(5))
+    lp.gravity = (if (barOnTop) Gravity.BOTTOM else Gravity.TOP) or
+      Gravity.CENTER_HORIZONTAL
+    if (barOnTop) {
+      lp.bottomMargin = dp(4)
+    } else {
+      lp.topMargin = dp(4)
+    }
+    handle.layoutParams = lp
+    root.addView(handle)
+    var startX = 0
+    var startY = 0
+    var rawX = 0f
+    var rawY = 0f
+    handle.setOnTouchListener { v, event ->
+      val wm = windowManager
+      val r = rootView
+      val p = layoutParams
+      if (wm == null || r == null || p == null) {
+        return@setOnTouchListener false
+      }
+      when (event.actionMasked) {
+        MotionEvent.ACTION_DOWN -> {
+          startX = p.x
+          startY = p.y
+          rawX = event.rawX
+          rawY = event.rawY
+          true
+        }
+        MotionEvent.ACTION_MOVE -> {
+          val maxX = (screenWidth - p.width).coerceAtLeast(0)
+          val maxY = (screenHeight - p.height).coerceAtLeast(0)
+          p.x = (startX + (event.rawX - rawX).toInt()).coerceIn(0, maxX)
+          p.y = (startY + (event.rawY - rawY).toInt()).coerceIn(0, maxY)
+          try {
+            wm.updateViewLayout(r, p)
+          } catch (_: Exception) {
+          }
+          true
+        }
+        MotionEvent.ACTION_UP -> {
+          saveGeometry()
+          v.performClick()
+          true
+        }
+        else -> false
+      }
+    }
+    handle.bringToFront()
   }
 
   private fun saveGeometry() {
