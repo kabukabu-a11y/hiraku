@@ -86,16 +86,25 @@ import androidx.compose.ui.window.DialogProperties
 import arun.com.chromer.customtab.LinkPreferences
 
 /**
- * Liquid Glass building blocks (v2.3.0). The original plan was to use
- * the Glasmio library like MeiloX does, but Glasmio 0.1.3 is built
- * for the Kotlin 2.x / Compose 1.9+ toolchain and cannot be resolved
- * against this project's Kotlin 1.9 / Compose 1.5 setup, so the glass
- * material is implemented in-house instead: translucent tint, a
- * light-catching gradient border and — where the window allows it
- * (chooser sheet, overlay windows) — a real backdrop blur from the
- * platform (FLAG_BLUR_BEHIND / background blur radius on API 31+).
+ * Liquid Glass building blocks (v2.3.0, re-based in v2.3.2 item
+ * 78). The original plan was to use the Glasmio library like MeiloX
+ * does, but Glasmio 0.1.3 is built for the Kotlin 2.x / Compose 1.9+
+ * toolchain and cannot be resolved against this project's
+ * Kotlin 1.9 / Compose 1.5 setup, so the glass material is
+ * implemented in-house instead: translucent tint, a light-catching
+ * gradient border and — where the window allows it (chooser sheet,
+ * overlay windows) — a real backdrop blur from the platform
+ * (FLAG_BLUR_BEHIND / background blur radius on API 31+).
  * Everything degrades to a plain solid surface when the user turns
  * the glass effect off.
+ *
+ * v2.3.2: the values are no longer in-house guesses. They are
+ * ported from the actual Glasmio 0.1.3 sources (the version MeiloX
+ * pins) — see [IosMotion] and the glass parameter notes below.
+ * What could NOT be ported is Glasmio's rendering pipeline itself
+ * (backdrop capture + AGSL lens/refraction shaders), which needs
+ * the newer Compose runtime; the tints, alphas, geometry and
+ * spring constants below are the real measured values.
  */
 
 /** The yellow used for ON toggles so the on state stands out. */
@@ -115,19 +124,125 @@ val OccEasing = CubicBezierEasing(0.25f, 0.1f, 0.25f, 1f)
 fun occInterpolator(): Interpolator = PathInterpolator(0.25f, 0.1f, 0.25f, 1f)
 
 /**
+ * Motion constants ported from Glasmio 0.1.3 — the library MeiloX
+ * is built on (v2.3.2 items 78/78b: prefer the Apple-side values).
+ * Sources:
+ *  - glasmio-glass `DampedDragAnimation.kt`: the drag/value/press
+ *    springs of the tab bar and native controls.
+ *  - glasmio-glass `InteractiveHighlight.kt`: the press highlight
+ *    spring.
+ *  - glasmio-glass `LiquidMenuMorphMotion.kt`: iOS-style
+ *    (dampingRatio, response) spring specs; a response converts to
+ *    a Compose stiffness with (2π / response)².
+ *  - glasmio-scaffold `SheetMotion.kt` (GlasmioSheetDefaults): the
+ *    sheet spring, damping 1 / stiffness 300.
+ */
+object IosMotion {
+  /** Tab value spring: spring(1f, 1000f) in DampedDragAnimation. */
+  const val VALUE_DAMPING = 1f
+  const val VALUE_STIFFNESS = 1000f
+
+  /** Press progress spring: spring(1f, 1000f, 0.001f), same source. */
+  const val PRESS_DAMPING = 1f
+  const val PRESS_STIFFNESS = 1000f
+
+  /** Indicator lift/unlift (TabBarIndicator lens): spring(1f, 631.65468f, 0.001f). */
+  const val INDICATOR_DAMPING = 1f
+  const val INDICATOR_STIFFNESS = 631.65468f
+
+  /** Segmented indicator lift: also spring(1f, 631.65468f, 0.001f). */
+  const val SEGMENTED_DAMPING = 1f
+  const val SEGMENTED_STIFFNESS = 631.65468f
+
+  /** Press highlight: spring(0.5f, 300f, 0.001f) in InteractiveHighlight. */
+  const val HIGHLIGHT_DAMPING = 0.5f
+  const val HIGHLIGHT_STIFFNESS = 300f
+
+  /** Indicator scale springs while pressed: X spring(0.6f, 250f), Y spring(0.7f, 250f). */
+  const val SCALE_X_DAMPING = 0.6f
+  const val SCALE_X_STIFFNESS = 250f
+  const val SCALE_Y_DAMPING = 0.7f
+  const val SCALE_Y_STIFFNESS = 250f
+
+  /** UIKit switch thumb: lift spring(.625f, 541.54208f), unlift spring(.7f, 157.91367f). */
+  const val SWITCH_ON_DAMPING = 0.625f
+  const val SWITCH_ON_STIFFNESS = 541.54208f
+  const val SWITCH_OFF_DAMPING = 0.7f
+  const val SWITCH_OFF_STIFFNESS = 157.91367f
+
+  /** Sheet spring (GlasmioSheetDefaults): damping 1, stiffness 300. */
+  const val SHEET_DAMPING = 1f
+  const val SHEET_STIFFNESS = 300f
+
+  /** Velocity squash cap of the tab indicator layer: ±0.2 (GlassBottomBar). */
+  const val VELOCITY_SQUASH_CAP = 0.2f
+
+  /** iOS response (seconds) -> Compose stiffness: (2π / response)². */
+  fun stiffnessForResponse(response: Float): Float {
+    val omega = 2f * Math.PI.toFloat() / response
+    return omega * omega
+  }
+}
+
+/**
+ * An iOS-style spring as a platform [Interpolator] for the
+ * View-based windows (bubbles, overlay), where Compose springs do
+ * not reach. The curve is the analytic damped-spring step response
+ * for the given (dampingRatio, response) pair — the same spec form
+ * Glasmio's LiquidMenuMorphMotion uses (e.g. EjectSpring is
+ * (0.75, 0.5), BlurInSpring is (1, 0.3)). [durationMs] is the
+ * window over which the spring is sampled; pick it near the
+ * spring's settle time so the sampled end lands on 1.
+ */
+class IosSpringInterpolator(
+  private val dampingRatio: Float,
+  response: Float,
+  private val durationMs: Long
+) : Interpolator {
+  private val omega = 2f * Math.PI.toFloat() / response
+  private val alpha = dampingRatio * omega
+  private val omegaD = if (dampingRatio < 1f) {
+    omega * kotlin.math.sqrt(1f - dampingRatio * dampingRatio)
+  } else {
+    0f
+  }
+
+  override fun getInterpolation(input: Float): Float {
+    if (input <= 0f) return 0f
+    if (input >= 1f) return 1f
+    val t = input * durationMs / 1000f
+    return if (dampingRatio < 1f) {
+      val envelope = kotlin.math.exp(-alpha * t)
+      1f - envelope * (
+        kotlin.math.cos(omegaD * t) +
+          (alpha / omegaD) * kotlin.math.sin(omegaD * t)
+        )
+    } else {
+      1f - kotlin.math.exp(-omega * t) * (1f + omega * t)
+    }
+  }
+}
+
+/**
  * The one Liquid Glass tint (v2.3.1 item 67): the glass material
  * keeps this exact color in light and dark mode alike — only the
  * strength setting changes how present it is. Content drawn on
  * glass uses the fixed light palette below so it stays readable
  * on the glass in either theme.
+ *
+ * v2.3.2: the base color is Glasmio's dark container color,
+ * 0xFF1C1C1E (glasmio-core GlassTokens.defaultGlassColors).
  */
-private val GlassTintBase = Color(0xFF1B1B22)
+private val GlassTintBase = Color(0xFF1C1C1E)
 
 /** Primary content color on glass surfaces (theme-independent). */
 val GlassContent = Color(0xFFF5F5F7)
 
-/** Secondary content color on glass surfaces (theme-independent). */
-val GlassContentSecondary = Color(0xFFC6C6CF)
+/**
+ * Secondary content color on glass surfaces (theme-independent).
+ * v2.3.2: Glasmio's dark secondaryContent, 0xB2EBEBF5.
+ */
+val GlassContentSecondary = Color(0xB2EBEBF5)
 
 /** How present the glass material is at each strength level. */
 private data class GlassParams(
@@ -138,12 +253,14 @@ private data class GlassParams(
 
 private fun glassParams(strength: Int): GlassParams {
   return when (strength) {
-    LinkPreferences.GLASS_WEAK -> GlassParams(0.52f, 0.05f, 0.38f)
-    LinkPreferences.GLASS_STRONG -> GlassParams(0.90f, 0.17f, 0.85f)
-    // Medium (default) is deliberately stronger than the v2.3.0
-    // glass (item 65): denser tint, a visible sheen and a brighter
-    // light-catching edge.
-    else -> GlassParams(0.76f, 0.11f, 0.62f)
+    LinkPreferences.GLASS_WEAK -> GlassParams(0.42f, 0.06f, 0.12f)
+    LinkPreferences.GLASS_STRONG -> GlassParams(0.68f, 0.16f, 0.30f)
+    // Medium = Glasmio's measured dark container (GlassTokens
+    // .defaultGlassColors): 0xFF1C1C1E at alpha 0.54, with the
+    // subtle stroke 0x2BFFFFFF (alpha 0.17) along the edge. The
+    // v2.3.1 in-house values (alpha 0.76, border 0.62) read as a
+    // solid dark slab next to MeiloX's bar (item 72).
+    else -> GlassParams(0.54f, 0.10f, 0.17f)
   }
 }
 
@@ -211,11 +328,15 @@ fun glassViewColor(
     return if (dark) 0xFF202124.toInt() else 0xFFF2F2F7.toInt()
   }
   val alpha = when (strength) {
-    LinkPreferences.GLASS_WEAK -> 0xB4
-    LinkPreferences.GLASS_STRONG -> 0xF2
-    else -> 0xE0
+    LinkPreferences.GLASS_WEAK -> 0x73
+    LinkPreferences.GLASS_STRONG -> 0xC8
+    // Medium sits just above Glasmio's container alpha (0.54):
+    // these surfaces float over the platform backdrop blur of
+    // their window, so most of the glass read comes from the
+    // blur, not from the tint (v2.3.2 item 78).
+    else -> 0x99
   }
-  return (alpha shl 24) or 0x1B1B22
+  return (alpha shl 24) or 0x1C1C1E
 }
 
 /**
@@ -236,9 +357,16 @@ fun HirakuToggle(
     animationSpec = when (animLevel) {
       LinkPreferences.ANIM_OFF -> tween(durationMillis = 1)
       LinkPreferences.ANIM_WEAK -> tween(durationMillis = 160)
+      // UIKit switch thumb springs, ported from Glasmio's
+      // DampedDragAnimation (v2.3.2 item 78c): turning on uses the
+      // lift spec, turning off the softer unlift spec.
+      checked -> spring(
+        dampingRatio = IosMotion.SWITCH_ON_DAMPING,
+        stiffness = IosMotion.SWITCH_ON_STIFFNESS
+      )
       else -> spring(
-        dampingRatio = Spring.DampingRatioMediumBouncy,
-        stiffness = Spring.StiffnessMedium
+        dampingRatio = IosMotion.SWITCH_OFF_DAMPING,
+        stiffness = IosMotion.SWITCH_OFF_STIFFNESS
       )
     },
     label = "toggleKnob"
@@ -270,7 +398,9 @@ fun HirakuToggle(
 /** One selectable row inside a [GlassSelectPopup]. */
 data class GlassOption(
   val label: String,
-  val icon: ImageVector? = null
+  val icon: ImageVector? = null,
+  /** Raster icon (e.g. an app icon for the download-app list, item 77). */
+  val iconBitmap: ImageBitmap? = null
 )
 
 private val PopupRowHeight = 48.dp
@@ -306,9 +436,11 @@ fun GlassSelectPopup(
       LinkPreferences.ANIM_WEAK -> tween(durationMillis = 140, easing = OccEasing)
       // No overshoot: unlike the bottom bar's liquid, this pill
       // must stay inside the popup frame at all times (item 63).
+      // The spec is Glasmio's TabBarIndicator lift spring —
+      // critically damped, fast, no bounce (v2.3.2 item 78c).
       else -> spring(
-        dampingRatio = Spring.DampingRatioNoBouncy,
-        stiffness = Spring.StiffnessMediumLow
+        dampingRatio = IosMotion.INDICATOR_DAMPING,
+        stiffness = IosMotion.INDICATOR_STIFFNESS
       )
     },
     label = "popupPill"
@@ -327,10 +459,10 @@ fun GlassSelectPopup(
       AnimatedVisibility(
         visible = shown,
         enter = fadeIn(tween(160)) + scaleIn(
-          initialScale = 0.9f,
+          initialScale = 0.92f,
           animationSpec = spring(
-            dampingRatio = Spring.DampingRatioMediumBouncy,
-            stiffness = Spring.StiffnessMediumLow
+            dampingRatio = IosMotion.SHEET_DAMPING,
+            stiffness = IosMotion.SHEET_STIFFNESS
           )
         )
       ) {
@@ -345,7 +477,7 @@ fun GlassSelectPopup(
               shape = shape,
               enabled = true,
               dark = true,
-              tint = Color(0xFF14141B).copy(alpha = 0.82f)
+              tint = GlassTintBase.copy(alpha = 0.82f)
             )
         ) {
           // Sliding pill highlight behind the rows.
@@ -396,7 +528,16 @@ fun GlassSelectPopup(
                   .padding(horizontal = 16.dp),
                 verticalAlignment = Alignment.CenterVertically
               ) {
-                if (option.icon != null) {
+                if (option.iconBitmap != null) {
+                  androidx.compose.foundation.Image(
+                    bitmap = option.iconBitmap,
+                    contentDescription = null,
+                    modifier = Modifier
+                      .size(24.dp)
+                      .clip(RoundedCornerShape(6.dp))
+                  )
+                  Spacer(modifier = Modifier.width(12.dp))
+                } else if (option.icon != null) {
                   Icon(
                     imageVector = option.icon,
                     contentDescription = null,
@@ -459,20 +600,26 @@ fun GlassTabSwitch(
       animationSpec = if (animLevel == LinkPreferences.ANIM_OFF) {
         snap()
       } else {
+        // Glasmio's SegmentedIndicator lift spring — critically
+        // damped, no bounce (v2.3.2 item 78c).
         spring(
-          dampingRatio = Spring.DampingRatioLowBouncy,
-          stiffness = Spring.StiffnessMediumLow
+          dampingRatio = IosMotion.SEGMENTED_DAMPING,
+          stiffness = IosMotion.SEGMENTED_STIFFNESS
         )
       },
       label = "glassTabSwitch"
     )
+    // The highlight is a glass capsule, not a solid theme color:
+    // Glasmio's tab indicator base is white at 0.10 alpha over the
+    // glass (GlassBottomBar onDrawSurface), with a light edge.
     Box(
       modifier = Modifier
         .offset(x = offset)
         .width(segmentWidth)
         .fillMaxHeight()
         .clip(shape)
-        .background(MaterialTheme.colorScheme.primary)
+        .background(Color.White.copy(alpha = 0.10f))
+        .border(1.dp, Color.White.copy(alpha = 0.17f), shape)
     )
     Row(modifier = Modifier.fillMaxSize()) {
       options.forEachIndexed { index, label ->
@@ -486,7 +633,7 @@ fun GlassTabSwitch(
           Text(
             text = label,
             color = if (index == selectedIndex) {
-              MaterialTheme.colorScheme.onPrimary
+              GlassContent
             } else {
               GlassContentSecondary
             },
