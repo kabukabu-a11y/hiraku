@@ -106,6 +106,8 @@ import arun.com.chromer.history.HistoryStore
 import arun.com.chromer.theme.LynketTheme
 import arun.com.chromer.ui.HirakuToggle
 import arun.com.chromer.ui.appLabel
+import arun.com.chromer.ui.GlassContent
+import arun.com.chromer.ui.GlassContentSecondary
 import arun.com.chromer.ui.glassBackground
 import arun.com.chromer.ui.rememberAppIcon
 import java.net.HttpURLConnection
@@ -427,20 +429,38 @@ class LinkHandlerActivity : ComponentActivity() {
     val density = LocalDensity.current
     val rowHeightPx = with(density) { rowHeight.toPx() }
     var hoverIndex by remember { mutableStateOf<Int?>(null) }
-    val pillAnim = remember { Animatable(0f) }
+    // The follow pill has two edges (v2.3.1 item 68): a fast edge
+    // and a slower edge, so it stretches a little while travelling
+    // and settles back to exactly one row — an in-between liquid
+    // feel, softer than the rigid v2.3.0 pill but never as extreme
+    // as a gooey blob. The stretch is capped at 0.4 rows.
+    val pillFast = remember { Animatable(0f) }
+    val pillSlow = remember { Animatable(0f) }
     LaunchedEffect(hoverIndex) {
       val target = hoverIndex
       if (target != null) {
         if (animLevel == LinkPreferences.ANIM_OFF) {
-          pillAnim.snapTo(target.toFloat())
+          pillFast.snapTo(target.toFloat())
+          pillSlow.snapTo(target.toFloat())
         } else {
-          pillAnim.animateTo(
-            target.toFloat(),
-            spring(
-              dampingRatio = 0.8f,
-              stiffness = Spring.StiffnessMedium
+          launch {
+            pillFast.animateTo(
+              target.toFloat(),
+              spring(
+                dampingRatio = 0.85f,
+                stiffness = Spring.StiffnessMedium
+              )
             )
-          )
+          }
+          launch {
+            pillSlow.animateTo(
+              target.toFloat(),
+              spring(
+                dampingRatio = Spring.DampingRatioNoBouncy,
+                stiffness = Spring.StiffnessLow
+              )
+            )
+          }
         }
       }
     }
@@ -508,7 +528,7 @@ class LinkHandlerActivity : ComponentActivity() {
                 .width(96.dp)
                 .height(5.dp)
                 .clip(RoundedCornerShape(50))
-                .background(MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.55f))
+                .background(GlassContentSecondary.copy(alpha = 0.55f))
             )
           }
           Row(
@@ -518,11 +538,13 @@ class LinkHandlerActivity : ComponentActivity() {
             Text(
               text = stringResource(R.string.chooser_title),
               style = MaterialTheme.typography.titleMedium,
+              color = GlassContent,
               modifier = Modifier.weight(1f)
             )
             Text(
               text = stringResource(R.string.secret_mode),
-              style = MaterialTheme.typography.bodyMedium
+              style = MaterialTheme.typography.bodyMedium,
+              color = GlassContent
             )
             Spacer(modifier = Modifier.width(8.dp))
             HirakuToggle(
@@ -623,7 +645,8 @@ class LinkHandlerActivity : ComponentActivity() {
                       R.string.chooser_fix_for_app,
                       referrerLabel ?: referrerPackage
                     ),
-                    style = MaterialTheme.typography.bodyMedium
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = GlassContent
                   )
                 }
               }
@@ -640,7 +663,8 @@ class LinkHandlerActivity : ComponentActivity() {
                   )
                   Text(
                     text = stringResource(R.string.chooser_fix_for_site) + "（$host）",
-                    style = MaterialTheme.typography.bodyMedium
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = GlassContent
                   )
                 }
               }
@@ -649,15 +673,24 @@ class LinkHandlerActivity : ComponentActivity() {
               // over the list, release to open with that item.
               Box(modifier = Modifier.fillMaxWidth()) {
                 if (hoverIndex != null) {
+                  // Strong glass pill (item 68c): always rendered
+                  // at the strongest glass level, whatever the
+                  // global strength setting says.
+                  val pillTop = minOf(pillFast.value, pillSlow.value)
+                  val pillSpan = minOf(
+                    kotlin.math.abs(pillFast.value - pillSlow.value),
+                    0.4f
+                  )
                   Box(
                     modifier = Modifier
-                      .offset(y = rowHeight * pillAnim.value)
+                      .offset(y = rowHeight * pillTop)
                       .fillMaxWidth()
-                      .height(rowHeight)
+                      .height(rowHeight * (1f + pillSpan))
                       .padding(horizontal = 4.dp, vertical = 3.dp)
-                      .clip(RoundedCornerShape(16.dp))
-                      .background(
-                        MaterialTheme.colorScheme.primary.copy(alpha = 0.18f)
+                      .glassBackground(
+                        shape = RoundedCornerShape(16.dp),
+                        tint = Color.White.copy(alpha = 0.13f),
+                        strength = LinkPreferences.GLASS_STRONG
                       )
                   )
                 }
@@ -743,7 +776,7 @@ class LinkHandlerActivity : ComponentActivity() {
             color = if (method == OpenMethod.CANCEL) {
               Color(0xFFFF453A)
             } else {
-              Color.Unspecified
+              GlassContent
             }
           )
         }
@@ -763,7 +796,8 @@ class LinkHandlerActivity : ComponentActivity() {
           Spacer(modifier = Modifier.width(14.dp))
           Text(
             text = appLabel(context, item.packageName),
-            style = MaterialTheme.typography.bodyLarge
+            style = MaterialTheme.typography.bodyLarge,
+            color = GlassContent
           )
         }
       }
@@ -804,12 +838,14 @@ class LinkHandlerActivity : ComponentActivity() {
   /** Simple one-color glyphs for the function-style methods. */
   @Composable
   private fun MethodGlyph(method: OpenMethod) {
-    val tint = MaterialTheme.colorScheme.onSurfaceVariant
+    // Fixed light palette: the glyphs sit on the glass sheet, so
+    // their colors must not follow the theme (item 64).
+    val tint = GlassContentSecondary
     Box(
       modifier = Modifier
         .size(30.dp)
         .clip(RoundedCornerShape(8.dp))
-        .background(MaterialTheme.colorScheme.surfaceVariant),
+        .background(Color.White.copy(alpha = 0.12f)),
       contentAlignment = Alignment.Center
     ) {
       when (method) {
