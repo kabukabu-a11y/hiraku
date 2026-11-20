@@ -26,6 +26,17 @@ After installing, set Hiraku as your default browser so links from other apps ar
 - **URL security check (v2.1.0)**: warns before opening suspicious links (IP-address hosts, punycode domains, URLs with embedded user info). Can be turned off.
 - **And more**: article mode, tabs & history, desktop site toggle, a dedicated settings screen, and a Japanese / English UI (Settings → Language).
 
+## What's new in v2.3.2
+
+- **The bottom bar is rebuilt on MeiloX's actual glass implementation**: v2.3.1's bar only looked glass-like — it painted a flat tint and a solid-color highlight. The bar now uses the real values from Glasmio (the glass library MeiloX ships with): the measured iOS container tint (0xFF1C1C1E at 54%), the glass capsule highlight (a translucent white fill with a lit edge instead of a solid color), and the exact spring constants of Glasmio's DampedDragAnimation — value spring (damping 1, stiffness 1000), press lift and scale springs, and its velocity "squash" on the moving highlight, capped at ±0.2 exactly as in Glasmio's GlassBottomBar. (Glasmio's refraction shader pipeline itself needs a newer Kotlin/Compose toolchain than Hiraku's, so the rendering is Hiraku's platform blur + these sourced values.)
+- **Bubbles land where they should**: the layout pass no longer hijacks a bubble that is mid-animation (that froze bubbles mid-screen), the stack position is clamped to the display, and every bubble motion — snap-back, re-stacking, pop in/out — now runs on iOS spring curves from Glasmio's LiquidMenuMorphMotion.
+- **The ✕ target works, for real this time**: the hit test compared the bubble's window coordinates against a target computed from the full display size — two different coordinate spaces, off by the system bars. It now compares both views' real on-screen positions (getLocationOnScreen) with a 140dp radius, and the red highlight, haptic tick and deletion all follow that one test.
+- **Home gesture fixed**: the overlay's full-screen tap catcher covered the bottom gesture strip and ate the home gesture. Overlay catcher windows now stop above the gesture area.
+- **Overlay menu, anchored and reliable**: the ⋮ menu now opens above its button and follows it when the window moves (before, it appeared at a fixed screen offset), flips below or clamps so it is never clipped, and the toggle actually closes it — the old outside-touch dismissal raced the button's click and re-opened the menu every time; a dedicated catcher window now takes outside taps instead.
+- **Overlay resize, structural fixes**: while dragging, an opaque cover sits over the window so the backdrop blur is visibly paused (attribute tweaks alone didn't take effect on some devices); the corner arc now traces the window's real 28dp corner radius, and the resize strips stop at the bar's measured height.
+- **Sourced motion everywhere**: the chooser sheet, its two-edge follow pill, the settings popups, the home tab switch and the bubble ⇄ overlay morphs all run on the same iOS spring specs (Glasmio's sheet spring (1, 300), the indicator spring (1, 631.65), response-based stiffnesses), and the chooser sheet gained a spring exit instead of vanishing.
+- **Download app list**: each row in Settings → download app now shows the app's icon on the left.
+
 ## What's new in v2.3.1
 
 - **Bottom bar fixes**: taps now switch tabs (only drags worked before), and the liquid highlight keeps its shape while it slides — it stretches just a little while travelling (never more than about 1.3x) and settles with a spring.
@@ -96,6 +107,17 @@ The ad-blocking list is built from the public [pgl.yoyo.org adservers](https://p
 - **共有先アプリを選択画面に（v2.3.0）**：クイック共有は廃止し、共有を受け付けるアプリが選択画面に「開き方」として直接並ぶようになりました（設定で追加・削除できます）
 - **URLセキュリティチェック（v2.1.0）**：IPアドレスへのリンク、国際化ドメイン（xn--）、ユーザー情報を含むURLなど、怪しいリンクを開く前に警告します（OFFにもできます）
 - **その他**：記事モード、タブと履歴、デスクトップサイト切替、細かい設定を集約した設定画面、日本語／英語の表示切替（設定 → 言語）
+
+## v2.3.2の新機能
+
+- **下のバーをMeiloXの実物のガラス実装で作り直し**：v2.3.1のバーは「ガラス風」で、平らな色塗りと単色ハイライトでした。今回はMeiloXが採用しているガラスライブラリGlasmioの実物の値を採用：iOS実測のコンテナ色（0xFF1C1C1E、54%）、単色ではないガラスカプセルのハイライト（半透明の白＋光る縁）、そしてGlasmioのDampedDragAnimationのスプリング定数そのもの（値スプリング＝減衰1・硬さ1000、押し込みと拡縮のスプリング、移動ハイライトの速度スキッシュはGlassBottomBarと同じ±0.2上限）。※Glasmioの屈折シェーダー自体はHirakuより新しいKotlin/Composeが必要なため移植できず、描画はHirakuのプラットフォームぼかし＋この実測値の組み合わせです
+- **バブルの位置が正常に**：アニメーション中のバブルをレイアウト処理が横取りして画面の途中で固まる問題を修正。スタック位置は画面内にクランプし、スナップバック・並び替え・出入りの動きはすべてGlasmioのLiquidMenuMorphMotion由来のiOSスプリング曲線に
+- **✕ターゲットを今度こそ修正**：従来の当たり判定はバブルの窓座標と「画面全体サイズから計算したターゲット位置」という別々の座標空間を比べており、システムバーの分だけずれていました。両ビューの実画面座標（getLocationOnScreen）同士を半径140dpで比較する方式に書き換え、赤変色・振動・削除はすべてこの判定に連動します
+- **ホームジェスチャが効かない問題を修正**：オーバーレイの全画面タップ受け窓が下端のジェスチャ領域まで覆い、ホームジェスチャを食っていました。受け窓はジェスチャ領域の手前で止まるようになりました
+- **オーバーレイのメニューをボタン連動に**：︙メニューはボタンの真上に出て、窓を動かしてもボタンに追従します（従来は画面の固定位置）。画面外にはみ出す場合は下側への反転とクランプで絶対に切れません。トグルで閉じない問題も修正（従来の「外側タッチで閉じる」がボタンのクリックと競合して開き直していました。専用の受け窓が外側タップを処理します）
+- **オーバーレイのリサイズを構造から修正**：ドラッグ中は窓の最前面に不透明カバーを被せるので、背景ぼかしの一時停止が目に見えて効きます（属性変更だけでは効かない端末があったため）。角の弧グリップは窓の実際の角丸28dpをなぞる描画に、リサイズ帯の停止位置はバーの実高から算出
+- **全体に仕入れたモーションを適用**：選択シートと二辺追従ピル、設定ポップアップ、ホームのタブ切替、バブル⇄オーバーレイ遷移が、同じiOSスプリング仕様（Glasmioのシートスプリング (1, 300)、インジケータースプリング (1, 631.65)、応答時間ベースの硬さ）で動くようになり、選択シートには消え際のスプリングも追加
+- **ダウンロードアプリ一覧にアイコン**：設定のダウンロードアプリ選択で、各行の左側にアプリアイコンが表示されます
 
 ## v2.3.1の新機能
 
