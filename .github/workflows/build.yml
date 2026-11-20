@@ -44,13 +44,12 @@ jobs:
         run: |
           LOG=${{ github.workspace }}/build.log
           esc() { printf '%s' "$1" | sed -e 's/%/%25/g' -e 's/\r/%0D/g' | cut -c1-600; }
-          { grep -E "^\* What went wrong" -A 8 "$LOG" || true; } | head -10 | while IFS= read -r line; do
-            [ -n "$line" ] && echo "::error::$(esc "$line")"
-          done
-          { sed -n '/\* Exception is:/,/^\* Try:/p' "$LOG" || true; } | grep -vE "^\s+at (org\.gradle|java\.base/jdk)" | head -30 | while IFS= read -r line; do
-            [ -n "$line" ] && echo "::error::$(esc "$line")"
-          done
-          { grep -E "^e: |error: |FAILED" "$LOG" || true; } | awk '!seen[$0]++' | head -10 | while IFS= read -r line; do
+          START=$(grep -n "FAILURE: Build failed" "$LOG" | head -1 | cut -d: -f1)
+          START=${START:-1}
+          { sed -n "${START},\$p" "$LOG" || true; } \
+            | grep -vE "^[[:space:]]+at " \
+            | grep -vE "^\* (Try|Get more help)" \
+            | awk 'NF' | awk '!seen[$0]++' | head -46 | while IFS= read -r line; do
             echo "::error::$(esc "$line")"
           done
       - name: Upload build log
