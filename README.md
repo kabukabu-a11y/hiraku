@@ -26,6 +26,12 @@ After installing, set Hiraku as your default browser so links from other apps ar
 - **URL security check (v2.1.0)**: warns before opening suspicious links (IP-address hosts, punycode domains, URLs with embedded user info). Can be turned off.
 - **And more**: article mode, tabs & history, desktop site toggle, a dedicated settings screen, and a Japanese / English UI (Settings → Language).
 
+## What's new in v2.3.4
+
+- **Crash when adjusting the overlay window — fixed**: v2.3.3 paused the backdrop blur during drags by removing and re-adding the whole window, and on ColorOS that crashed the service as soon as a resize or move started. Drag-time blur flips now only update the window's layout params in place; the re-attach remains only for passthrough transitions, which happen outside any drag.
+- **Menu and close buttons dead on phone-size windows — fixed**: the new bottom corner grips overlapped the bar's corner buttons and swallowed their taps. A grip now only takes touches that start in the outermost 14dp corner sliver; every other tap falls through to the button underneath.
+- **Known issue**: the home-gesture problem (the system home gesture not responding while Hiraku is in use) is still under investigation and is NOT fixed in this release.
+
 ## What's new in v2.3.3
 
 - **Home gesture, audited end to end**: the gesture still failed on device — even while only the main app was in use — so every window Hiraku can have alive was audited. The gesture-free strip at the bottom of the screen is now a 64dp-class exclusion (ColorOS's gesture area is wider than the nominal navigation bar), and it applies uniformly: the overlay's main window (default shape, title drags, corner grips, edge strips, move handle), both tap catchers, the ⋮ menu's bottom edge, and the bubbles' dock position (a bubble being dragged may pass through the strip; where it docks may not). The main app's activities were checked too — no full-screen touch layers or gesture-stealing window flags there.
@@ -118,6 +124,12 @@ The ad-blocking list is built from the public [pgl.yoyo.org adservers](https://p
 - **共有先アプリを選択画面に（v2.3.0）**：クイック共有は廃止し、共有を受け付けるアプリが選択画面に「開き方」として直接並ぶようになりました（設定で追加・削除できます）
 - **URLセキュリティチェック（v2.1.0）**：IPアドレスへのリンク、国際化ドメイン（xn--）、ユーザー情報を含むURLなど、怪しいリンクを開く前に警告します（OFFにもできます）
 - **その他**：記事モード、タブと履歴、デスクトップサイト切替、細かい設定を集約した設定画面、日本語／英語の表示切替（設定 → 言語）
+
+## v2.3.4の新機能
+
+- **オーバーレイの調節で落ちる問題を修正**：v2.3.3ではドラッグ中のぼかし停止で窓全体を付け直していたため、ColorOSではリサイズや移動を始めた途端にサービスが落ちていました。ドラッグ中のぼかしの切り替えはレイアウトパラメータの更新だけにし、付け直しはドラッグの外で起きるパススルー切り替えの時だけに限定しました
+- **スマホサイズで設定ボタン等が押せない問題を修正**：下の角グリップがバーの角のボタン（✕と⋮）に被さってタップを奪っていました。グリップが取るのは角の外側14dpで始まるタッチだけにし、それ以外のタップは下のボタンへ通すようにしました
+- **既知の問題**：ホームジェスチャが効かない問題は調査中で、この版ではまだ直っていません
 
 ## v2.3.3の新機能
 

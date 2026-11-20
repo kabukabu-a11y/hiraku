@@ -669,6 +669,28 @@ class OverlayService : Service() {
         val p = layoutParams ?: return@setOnTouchListener false
         when (event.actionMasked) {
           MotionEvent.ACTION_DOWN -> {
+            // v2.3.4 (item 89): the grip view overlaps the bar's
+            // corner cells (close at START, menu at END). Only a
+            // touch starting in the outermost 14dp corner sliver
+            // belongs to the grip; anything else returns false so
+            // the tap falls through to the button underneath. In
+            // v2.3.3 the whole 32dp grip consumed touches, and on
+            // phone-size windows it covered most of the corner
+            // buttons' targets — the menu button never responded
+            // at all (tablet-size windows were wide enough that
+            // the button glyphs sat clear of the grip).
+            val sliver = dp(14).toFloat()
+            val nearX = if (startSide) {
+              event.x < sliver
+            } else {
+              event.x > v.width - sliver
+            }
+            val nearY = if (barOnTop) {
+              event.y < sliver
+            } else {
+              event.y > v.height - sliver
+            }
+            if (!nearX || !nearY) return@setOnTouchListener false
             setBlurPaused(true)
             startX = p.x
             startY = p.y
@@ -1113,15 +1135,15 @@ class OverlayService : Service() {
   // ----- backdrop blur state (v2.3.3 items 81/86/87) -----
 
   /** Takes one blur-pause hold; the blur stays off until every hold is released. */
-  private fun acquireBlurPause() {
+  private fun acquireBlurPause(reattach: Boolean) {
     blurPauseHolds++
-    applyBlurState()
+    applyBlurState(reattach)
   }
 
   /** Releases one blur-pause hold. */
-  private fun releaseBlurPause() {
+  private fun releaseBlurPause(reattach: Boolean) {
     if (blurPauseHolds > 0) blurPauseHolds--
-    applyBlurState()
+    applyBlurState(reattach)
   }
 
   /**
@@ -1143,7 +1165,7 @@ class OverlayService : Service() {
    * in-place updates. The view hierarchy (and with it the
    * WebView's page state) is untouched by the re-attach.
    */
-  private fun applyBlurState() {
+  private fun applyBlurState(reattach: Boolean) {
     if (Build.VERSION.SDK_INT < 31) return
     val want = blurDesired && blurPauseHolds == 0
     if (want == blurApplied) return
@@ -1162,7 +1184,23 @@ class OverlayService : Service() {
       p.blurBehindRadius = 0
       p.dimAmount = 0f
     }
-    reattachWindow(wm, root, p)
+    // v2.3.4 (item 88): a state flip caused by a geometry drag
+    // must never re-attach the window. v2.3.3 re-attached on
+    // every drag start/end, and on the user's ColorOS device
+    // adjusting the window then crashed the service (the window
+    // is removed and re-added while one of its children is in
+    // the middle of dispatching the very gesture that drives
+    // the drag). Drag flips only update the layout params in
+    // place; the re-attach is kept for passthrough transitions,
+    // which happen outside any drag and worked on the device.
+    if (reattach) {
+      reattachWindow(wm, root, p)
+    } else {
+      try {
+        wm.updateViewLayout(root, p)
+      } catch (_: Exception) {
+      }
+    }
     blurApplied = want
   }
 
@@ -1205,14 +1243,14 @@ class OverlayService : Service() {
     if (Build.VERSION.SDK_INT < 31) return
     if (paused) {
       val wasApplied = blurApplied
-      acquireBlurPause()
+      acquireBlurPause(reattach = false)
       if (wasApplied) {
         val opaque = (0xFF shl 24) or (glassBarColor() and 0xFFFFFF)
         (rootView?.background as? GradientDrawable)?.setColor(opaque)
         barView?.setBackgroundColor(opaque)
       }
     } else {
-      releaseBlurPause()
+      releaseBlurPause(reattach = false)
       (rootView?.background as? GradientDrawable)?.setColor(glassBarColor())
       barView?.setBackgroundColor(glassBarColor())
     }
@@ -1828,7 +1866,7 @@ class OverlayService : Service() {
     // the return handle is added below, and the catcher was
     // already added behind this window, so neither the
     // passthrough state nor the window z-order is disturbed.
-    acquireBlurPause()
+    acquireBlurPause(reattach = true)
 
     val size = dp(48)
     val metrics = resources.displayMetrics
@@ -1932,7 +1970,7 @@ class OverlayService : Service() {
     // geometry drag is somehow still holding it. The re-attach
     // inside applyBlurState re-requests focus on the root, so
     // the window keeps receiving keys afterwards.
-    releaseBlurPause()
+    releaseBlurPause(reattach = true)
   }
 
   // ----- v2.3.0: the menu is a glass panel that pops out of the bar -----
