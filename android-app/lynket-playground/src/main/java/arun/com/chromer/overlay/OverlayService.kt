@@ -116,7 +116,6 @@ class OverlayService : Service() {
   private var menuAboveAnchor: Boolean = true
   private var menuPivotX: Float = 0f
   private var menuPivotY: Float = 0f
-  private var dragCoverView: View? = null
   private var shieldView: TextView? = null
   private var shieldCountView: TextView? = null
   private var progressBar: ProgressBar? = null
@@ -127,7 +126,14 @@ class OverlayService : Service() {
   private var catcherView: View? = null
   private var findBarView: View? = null
   private var findBarParams: WindowManager.LayoutParams? = null
-  private var blurWasOn: Boolean = false
+  // Backdrop-blur state (v2.3.3 items 81/86/87): whether the
+  // settings want the blur on this window, whether it is
+  // currently applied, and how many pause holds (geometry
+  // drags, passthrough) are outstanding. The blur is applied
+  // only when it is desired and no hold is outstanding.
+  private var blurDesired: Boolean = false
+  private var blurApplied: Boolean = false
+  private var blurPauseHolds: Int = 0
   private var windowAnimator: ValueAnimator? = null
 
   private var fullHeight: Int = 0
@@ -257,7 +263,15 @@ class OverlayService : Service() {
     val screenWidth = metrics.widthPixels
     val screenHeight = metrics.heightPixels
     val marginX = dp(10)
-    val marginBottom = dp(14)
+    // v2.3.3 (item 80): the default bottom margin IS the
+    // gesture exclusion. v2.3.2 excluded the gesture strip only
+    // from the catcher windows; the main window's default
+    // geometry kept a 14dp bottom margin and its move/resize
+    // clamps let its bottom edge reach the very bottom of the
+    // screen, so a touchable Hiraku window still sat inside the
+    // strip the home swipe starts in. The rule is now uniform:
+    // no long-lived touchable window enters the strip.
+    val marginBottom = bottomGestureExclusionPx()
     val topSpace = statusBarHeight() + dp(10)
     fullHeight = screenHeight - topSpace - marginBottom
     peekHeight = (screenHeight * 0.42f).toInt()
@@ -437,12 +451,25 @@ class OverlayService : Service() {
 
     // Resize grip on the corner opposite the bar, so it never covers
     // the bar buttons. Dragging it resizes the window freely.
-    // v2.3.2 (item 76): the box is 48dp and the arc is drawn with
-    // the window's own corner radius (28dp) centered on the real
-    // corner, so the stroke traces the frame instead of floating
-    // inside a smaller box the way the v2.3.1 grip did.
-    val grip = ArcGripView(this, flipVertical = barOnTop, cornerRadiusPx = cornerRadius).apply {
-      layoutParams = FrameLayout.LayoutParams(dp(48), dp(48)).apply {
+    // v2.3.2 (item 76): the arc is drawn with the window's own
+    // corner radius (28dp) centered on the real corner, so the
+    // stroke traces the frame instead of floating inside a
+    // smaller box the way the v2.3.1 grip did.
+    // v2.3.3 (item 81): the box grows from 48dp to 64dp. The
+    // arc's RectF spans the full 2r (56dp), which overflowed
+    // the 48dp box, and the stroke (2dp over a 3.4dp underlay,
+    // round caps) was clipped at the box edges, leaving the
+    // arc's ends looking cut off. In a 64dp box the whole
+    // RectF plus stroke fits inside, still anchored to the
+    // real corner, so the arc traces the window's corner
+    // circle exactly.
+    val grip = ArcGripView(
+      this,
+      flipVertical = barOnTop,
+      flipHorizontal = false,
+      cornerRadiusPx = cornerRadius
+    ).apply {
+      layoutParams = FrameLayout.LayoutParams(dp(64), dp(64)).apply {
         gravity = (if (barOnTop) Gravity.BOTTOM else Gravity.TOP) or Gravity.END
       }
     }
@@ -454,6 +481,11 @@ class OverlayService : Service() {
       flags = flags or WindowManager.LayoutParams.FLAG_BLUR_BEHIND
       dim = 0.2f
     }
+    // The blur state machine (items 81/87) starts from the
+    // settings-derived state of the freshly built window.
+    blurDesired = (flags and WindowManager.LayoutParams.FLAG_BLUR_BEHIND) != 0
+    blurApplied = blurDesired
+    blurPauseHolds = 0
 
     // Initial geometry: the remembered one when it still fits,
     // otherwise the classic near-full-screen layout.
@@ -469,6 +501,17 @@ class OverlayService : Service() {
       startY = saved[1].coerceIn(0, (screenHeight - startH).coerceAtLeast(0))
       if (isPeek) {
         startH = peekHeight
+      }
+    }
+    // A remembered geometry predates the gesture-strip rule
+    // (and peek reuses the remembered Y): clamp the initial
+    // shape, whatever its source, so the window's bottom edge
+    // starts above the strip (item 80).
+    val maxBottomEdge = screenHeight - bottomGestureExclusionPx()
+    if (startY + startH > maxBottomEdge) {
+      startY = (maxBottomEdge - startH).coerceAtLeast(0)
+      if (startY + startH > maxBottomEdge) {
+        startH = (maxBottomEdge - startY).coerceAtLeast(dp(160))
       }
     }
 
@@ -514,7 +557,10 @@ class OverlayService : Service() {
 
         MotionEvent.ACTION_MOVE -> {
           val maxX = (screenWidth - p.width).coerceAtLeast(0)
-          val maxY = (screenHeight - p.height).coerceAtLeast(0)
+          // The bottom edge stays above the gesture strip
+          // (item 80).
+          val maxY = (screenHeight - bottomGestureExclusionPx() - p.height)
+            .coerceAtLeast(0)
           p.x = (initialX + (event.rawX - initialRawX).toInt()).coerceIn(0, maxX)
           p.y = (initialY + (event.rawY - initialRawY).toInt()).coerceIn(0, maxY)
           try {
@@ -566,7 +612,14 @@ class OverlayService : Service() {
           val dy = (event.rawY - gripRawY).toInt()
           p.width = (gripStartW + dx).coerceIn(dp(260), screenWidth)
           if (barOnTop) {
-            p.height = (gripStartH + dy).coerceIn(dp(200), screenHeight - p.y)
+            // The grip is on the bottom edge here: growing the
+            // height moves the bottom edge, which must stay
+            // above the gesture strip (item 80).
+            p.height = (gripStartH + dy).coerceIn(
+              dp(200),
+              (screenHeight - bottomGestureExclusionPx() - p.y)
+                .coerceAtLeast(dp(200))
+            )
           } else {
             val newH = (gripStartH - dy).coerceIn(dp(200), screenHeight)
             p.y = (p.y + (p.height - newH)).coerceAtLeast(0)
@@ -588,6 +641,112 @@ class OverlayService : Service() {
 
         else -> false
       }
+    }
+
+    // v2.3.3 (item 86, ColorOS 17 mini-window style): grips on
+    // BOTH corners of the bar's own edge, so the window resizes
+    // from the bar side too. Up to v2.3.2 the only resize
+    // handles were the far corner grip and the far edge strip —
+    // with the bar at the bottom, resizing was only possible
+    // from the top. A bar-side grip keeps the far edge fixed
+    // and moves the bar edge (and its own side edge) with the
+    // finger. The grips are small (32dp) and hug the window's
+    // corners, clear of the bar buttons' centers, so the bar's
+    // taps keep working as before outside them. Like the far
+    // grip, they are always available, whether or not the
+    // free-resize (edge strips) setting is on.
+    val barGrips = mutableListOf<ArcGripView>()
+    fun setupBarGrip(gripView: View, startSide: Boolean) {
+      var startX = 0
+      var startY = 0
+      var startW = 0
+      var startH = 0
+      var startRawX = 0f
+      var startRawY = 0f
+      gripView.setOnTouchListener { v, event ->
+        val wm = windowManager ?: return@setOnTouchListener false
+        val r = rootView ?: return@setOnTouchListener false
+        val p = layoutParams ?: return@setOnTouchListener false
+        when (event.actionMasked) {
+          MotionEvent.ACTION_DOWN -> {
+            setBlurPaused(true)
+            startX = p.x
+            startY = p.y
+            startW = p.width
+            startH = p.height
+            startRawX = event.rawX
+            startRawY = event.rawY
+            true
+          }
+
+          MotionEvent.ACTION_MOVE -> {
+            if (isMinimized) {
+              isMinimized = false
+              webView?.visibility = View.VISIBLE
+            }
+            isPeek = false
+            val dx = (event.rawX - startRawX).toInt()
+            val dy = (event.rawY - startRawY).toInt()
+            val maxBottom = screenHeight - bottomGestureExclusionPx()
+            var newW = if (startSide) startW - dx else startW + dx
+            newW = newW.coerceIn(dp(260), screenWidth)
+            var newH = if (barOnTop) startH - dy else startH + dy
+            newH = newH.coerceIn(dp(200), maxBottom.coerceAtLeast(dp(200)))
+            p.width = newW
+            p.height = newH
+            // The far edge stays fixed: a START grip moves the
+            // left edge (the right edge is derived from the
+            // clamped width), an END grip keeps the left edge.
+            p.x = if (startSide) {
+              (startX + startW - newW)
+                .coerceIn(0, (screenWidth - newW).coerceAtLeast(0))
+            } else {
+              startX.coerceIn(0, (screenWidth - newW).coerceAtLeast(0))
+            }
+            // Same for the vertical axis: with the bar on top
+            // the bottom edge is fixed and the top edge moves;
+            // with the bar at the bottom the top edge is fixed.
+            // Either way the bottom edge respects the gesture
+            // strip (item 80).
+            p.y = if (barOnTop) {
+              (startY + startH - newH)
+                .coerceIn(0, (maxBottom - newH).coerceAtLeast(0))
+            } else {
+              startY.coerceIn(0, (maxBottom - newH).coerceAtLeast(0))
+            }
+            try {
+              wm.updateViewLayout(r, p)
+            } catch (_: Exception) {
+            }
+            true
+          }
+
+          MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+            setBlurPaused(false)
+            saveGeometry()
+            v.performClick()
+            true
+          }
+
+          else -> false
+        }
+      }
+    }
+    for (startSide in listOf(true, false)) {
+      val barGrip = ArcGripView(
+        this,
+        flipVertical = !barOnTop,
+        flipHorizontal = startSide,
+        cornerRadiusPx = cornerRadius
+      ).apply {
+        layoutParams = FrameLayout.LayoutParams(dp(32), dp(32)).apply {
+          gravity = (if (barOnTop) Gravity.TOP else Gravity.BOTTOM) or
+            (if (startSide) Gravity.START else Gravity.END)
+        }
+      }
+      root.addView(barGrip)
+      barGrips.add(barGrip)
+      setupBarGrip(barGrip, startSide)
     }
 
     // v2.2.0: PC-like free resizing from the window edges. Thin
@@ -663,7 +822,16 @@ class OverlayService : Service() {
               p.width = p.width.coerceIn(dp(260), screenWidth)
               p.height = p.height.coerceIn(dp(200), screenHeight)
               p.x = p.x.coerceIn(0, (screenWidth - p.width).coerceAtLeast(0))
-              p.y = p.y.coerceIn(0, (screenHeight - p.height).coerceAtLeast(0))
+              // The bottom edge stays above the gesture strip
+              // (item 80): clamp Y against the strip-aware
+              // bottom, then shrink the height if it still
+              // crosses (the far-edge strip grows the height
+              // directly).
+              val maxBottom = screenHeight - bottomGestureExclusionPx()
+              p.y = p.y.coerceIn(0, (maxBottom - p.height).coerceAtLeast(0))
+              if (p.y + p.height > maxBottom) {
+                p.height = (maxBottom - p.y).coerceAtLeast(dp(200))
+              }
               try {
                 wm.updateViewLayout(r, p)
               } catch (_: Exception) {
@@ -717,8 +885,9 @@ class OverlayService : Service() {
           p.height -= dy
         }
       }
-      // Keep the corner grip reachable above the edge strips.
+      // Keep the corner grips reachable above the edge strips.
       grip.bringToFront()
+      barGrips.forEach { it.bringToFront() }
     }
 
 
@@ -908,7 +1077,10 @@ class OverlayService : Service() {
         }
         MotionEvent.ACTION_MOVE -> {
           val maxX = (screenWidth - p.width).coerceAtLeast(0)
-          val maxY = (screenHeight - p.height).coerceAtLeast(0)
+          // The bottom edge stays above the gesture strip
+          // (item 80).
+          val maxY = (screenHeight - bottomGestureExclusionPx() - p.height)
+            .coerceAtLeast(0)
           p.x = (startX + (event.rawX - rawX).toInt()).coerceIn(0, maxX)
           p.y = (startY + (event.rawY - rawY).toInt()).coerceIn(0, maxY)
           try {
@@ -938,77 +1110,112 @@ class OverlayService : Service() {
 
   // ----- v2.2.0: blur is paused while resizing (cheaper + clearer) -----
 
+  // ----- backdrop blur state (v2.3.3 items 81/86/87) -----
+
+  /** Takes one blur-pause hold; the blur stays off until every hold is released. */
+  private fun acquireBlurPause() {
+    blurPauseHolds++
+    applyBlurState()
+  }
+
+  /** Releases one blur-pause hold. */
+  private fun releaseBlurPause() {
+    if (blurPauseHolds > 0) blurPauseHolds--
+    applyBlurState()
+  }
+
   /**
-   * Pauses the backdrop blur during geometry drags (v2.3.1 item
-   * 71). The v2.2.0/v2.3.0 attempts only edited the window's
-   * LayoutParams (clearing FLAG_BLUR_BEHIND, then also zeroing
-   * the radius) — on the user's ColorOS device the window manager
-   * keeps the blur attributes the window was added with and does
-   * not re-apply changed ones in the middle of the continuous
-   * relayout a resize drag produces, so the blur never actually
-   * stopped. v2.3.1 additionally made the window surface opaque.
-   * v2.3.2 (item 76): an opaque cover view is placed on top of
-   * the window's content for the duration of the drag and removed
-   * on release — a real view in the hierarchy cannot be ignored
-   * by the window manager the way attribute edits can, so the
-   * paused state is guaranteed visible whatever the ROM does.
+   * Applies the effective blur state: on only when the settings
+   * want it ([blurDesired]) and no pause hold is outstanding.
+   *
+   * History: v2.2.0–v2.3.2 edited the window's LayoutParams
+   * (clearing FLAG_BLUR_BEHIND, zeroing the radius) and called
+   * updateViewLayout, and v2.3.2 additionally covered the whole
+   * window with an opaque view during drags. On the user's
+   * ColorOS device the flag edits were never re-applied by the
+   * window manager — the blur never actually stopped — and the
+   * cover blacked out the page being resized. v2.3.3 (items 81
+   * and 86): the cover is gone, and a state flip instead
+   * re-attaches the window — removeView + addView reusing the
+   * same root view and the same params object with only the
+   * blur attributes changed — so the window is created with the
+   * attributes it should have, whatever the ROM does with
+   * in-place updates. The view hierarchy (and with it the
+   * WebView's page state) is untouched by the re-attach.
    */
-  private fun setBlurPaused(paused: Boolean) {
+  private fun applyBlurState() {
     if (Build.VERSION.SDK_INT < 31) return
+    val want = blurDesired && blurPauseHolds == 0
+    if (want == blurApplied) return
     val wm = windowManager ?: return
     val root = rootView ?: return
     val p = layoutParams ?: return
     val blurFlag = WindowManager.LayoutParams.FLAG_BLUR_BEHIND
-    if (paused) {
-      blurWasOn = (p.flags and blurFlag) != 0
-      if (blurWasOn) {
-        p.flags = p.flags and blurFlag.inv()
-        p.blurBehindRadius = 0
-        p.dimAmount = 0f
-        try {
-          wm.updateViewLayout(root, p)
-        } catch (_: Exception) {
-        }
-        val opaque = (0xFF shl 24) or (glassBarColor() and 0xFFFFFF)
-        (root.background as? GradientDrawable)?.setColor(opaque)
-        barView?.setBackgroundColor(opaque)
-        showDragCover(root)
-      }
-    } else if (blurWasOn) {
+    if (want) {
       p.flags = p.flags or blurFlag
       p.blurBehindRadius = dp(
         LinkPreferences.glassBlurRadiusDp(LinkPreferences.getGlassStrength(this))
       )
       p.dimAmount = 0.2f
-      try {
-        wm.updateViewLayout(root, p)
-      } catch (_: Exception) {
+    } else {
+      p.flags = p.flags and blurFlag.inv()
+      p.blurBehindRadius = 0
+      p.dimAmount = 0f
+    }
+    reattachWindow(wm, root, p)
+    blurApplied = want
+  }
+
+  /**
+   * Removes and re-adds the overlay window with the same root
+   * view and params object. The window animation is suppressed
+   * for the re-add (and restored on the params afterwards) so
+   * the window does not replay its entry animation, and focus
+   * is re-requested so the root keeps receiving keys.
+   */
+  private fun reattachWindow(
+    wm: WindowManager,
+    root: View,
+    p: WindowManager.LayoutParams
+  ) {
+    val animations = p.windowAnimations
+    p.windowAnimations = 0
+    try {
+      wm.removeView(root)
+    } catch (_: Exception) {
+    }
+    try {
+      wm.addView(root, p)
+    } catch (_: Exception) {
+    }
+    p.windowAnimations = animations
+    root.requestFocus()
+  }
+
+  /**
+   * The drag-time blur pause (geometry drags: title bar, move
+   * handle, corner grips, edge strips). Takes a pause hold for
+   * the duration of the drag; while this drag actually stopped
+   * an applied blur, the window's own surface also goes opaque
+   * (the root/bar background color, as in v2.3.1) so the window
+   * does not turn translucent mid-drag — without covering the
+   * page the way the removed drag cover did (item 86).
+   */
+  private fun setBlurPaused(paused: Boolean) {
+    if (Build.VERSION.SDK_INT < 31) return
+    if (paused) {
+      val wasApplied = blurApplied
+      acquireBlurPause()
+      if (wasApplied) {
+        val opaque = (0xFF shl 24) or (glassBarColor() and 0xFFFFFF)
+        (rootView?.background as? GradientDrawable)?.setColor(opaque)
+        barView?.setBackgroundColor(opaque)
       }
-      (root.background as? GradientDrawable)?.setColor(glassBarColor())
+    } else {
+      releaseBlurPause()
+      (rootView?.background as? GradientDrawable)?.setColor(glassBarColor())
       barView?.setBackgroundColor(glassBarColor())
-      hideDragCover()
-      blurWasOn = false
     }
-  }
-
-  private fun showDragCover(root: FrameLayout) {
-    if (dragCoverView != null) return
-    val cover = View(this).apply {
-      setBackgroundColor((0xFF shl 24) or (glassBarColor() and 0xFFFFFF))
-      layoutParams = FrameLayout.LayoutParams(
-        ViewGroup.LayoutParams.MATCH_PARENT,
-        ViewGroup.LayoutParams.MATCH_PARENT
-      )
-    }
-    root.addView(cover)
-    dragCoverView = cover
-  }
-
-  private fun hideDragCover() {
-    dragCoverView?.let { cover ->
-      (cover.parent as? ViewGroup)?.removeView(cover)
-    }
-    dragCoverView = null
   }
 
   /**
@@ -1016,7 +1223,13 @@ class OverlayService : Service() {
    * of: the system gesture strip (item 75). Overlay windows
    * receive touches even inside the gesture area, so a
    * full-height touchable catcher swallows the home gesture for
-   * as long as it lives.
+   * as long as it lives. Sized at a 64dp-class minimum (item 80):
+   * ColorOS's gesture detection area is wider than the nominal
+   * navigation bar height — with the smaller navBar + 8dp margin
+   * the home gesture still died on device, even while only the
+   * main app was in use — so every resident window (this main
+   * window, the catchers, the menu, the bubbles) keeps this
+   * whole strip clear.
    */
   private fun bottomGestureExclusionPx(): Int {
     val resId = resources.getIdentifier(
@@ -1029,7 +1242,7 @@ class OverlayService : Service() {
     } else {
       dp(24)
     }
-    return maxOf(navBar, dp(28)) + dp(8)
+    return maxOf(navBar, dp(56)) + dp(8)
   }
 
   // ----- v2.2.0: tapping the blurred surround enters passthrough -----
@@ -1605,6 +1818,17 @@ class OverlayService : Service() {
       wm.updateViewLayout(root, params)
     } catch (_: Exception) {
     }
+    // v2.3.3 (item 87): the backdrop blur is always off while
+    // passthrough lasts — the user reads and operates the app
+    // underneath through the surround, and a blurred surround
+    // made it unreadable. This takes a blur-pause hold (the
+    // same mechanism as the drag pause); exitPassthrough
+    // releases it, and the blur returns to whatever the setting
+    // says. The re-attach inside applyBlurState happens before
+    // the return handle is added below, and the catcher was
+    // already added behind this window, so neither the
+    // passthrough state nor the window z-order is disturbed.
+    acquireBlurPause()
 
     val size = dp(48)
     val metrics = resources.displayMetrics
@@ -1703,6 +1927,12 @@ class OverlayService : Service() {
     } catch (_: Exception) {
     }
     root.requestFocus()
+    // Release the passthrough blur-pause hold (item 87): the
+    // blur returns to the settings-derived state — unless a
+    // geometry drag is somehow still holding it. The re-attach
+    // inside applyBlurState re-requests focus on the root, so
+    // the window keeps receiving keys afterwards.
+    releaseBlurPause()
   }
 
   // ----- v2.3.0: the menu is a glass panel that pops out of the bar -----
@@ -1806,7 +2036,10 @@ class OverlayService : Service() {
     } else {
       anchorLoc[1] + anchor.height + gap
     }
-    val maxY = (screenH - menuH - margin).coerceAtLeast(topSafe)
+    // The menu's bottom edge also stays out of the system gesture
+    // strip (item 80): the panel is a touchable window, and near the
+    // bottom of the screen it would otherwise reach into the strip.
+    val maxY = (screenH - menuH - bottomGestureExclusionPx()).coerceAtLeast(topSafe)
     y = y.coerceIn(topSafe, maxY)
     params.x = x
     params.y = y
@@ -2222,9 +2455,7 @@ class OverlayService : Service() {
     windowAnimator = null
     hideMenu()
     removeCatcher()
-    // The drag cover is a child of the root window removed below;
-    // just drop the reference.
-    dragCoverView = null
+    blurPauseHolds = 0
     findBarView?.let { bar ->
       try {
         windowManager?.removeView(bar)
@@ -2360,10 +2591,14 @@ class OverlayService : Service() {
  * the corner point — the v2.3.1 grip drew a 22dp quadratic curve
  * inset 3dp inside a 38dp box, so it floated off the 28dp frame it
  * was supposed to trace and looked detached from the corner.
+ * v2.3.3 (item 86): [flipHorizontal] mirrors the arc for the
+ * START-side corners — the bar-side grips sit on both bottom (or
+ * top) corners, not only the END one.
  */
 private class ArcGripView(
   context: Context,
   private val flipVertical: Boolean,
+  private val flipHorizontal: Boolean,
   private val cornerRadiusPx: Float
 ) : View(context) {
   private val density = context.resources.displayMetrics.density
@@ -2387,19 +2622,26 @@ private class ArcGripView(
     val r = cornerRadiusPx
     // The view sits flush in the window's corner, so the corner
     // arc of the window frame is the circle of radius r centered
-    // one radius in from this view's outer corner.
-    val rect: RectF
-    val startAngle: Float
-    if (flipVertical) {
-      // Outer corner is bottom-right: arc from the right edge
-      // (angle 0) sweeping down to the bottom edge (angle 90).
-      rect = RectF(w - 2 * r, h - 2 * r, w, h)
-      startAngle = 0f
-    } else {
-      // Outer corner is top-right: arc from the top edge
-      // (angle -90) sweeping to the right edge (angle 0).
-      rect = RectF(w - 2 * r, 0f, w, 2 * r)
-      startAngle = -90f
+    // one radius in from this view's outer corner. The RectF is
+    // anchored to that outer corner on both axes.
+    val left = if (flipHorizontal) 0f else w - 2 * r
+    val top = if (flipVertical) h - 2 * r else 0f
+    val rect = RectF(left, top, left + 2 * r, top + 2 * r)
+    // Sweep the quarter from one window edge to the other
+    // (angles: 0 at 3 o'clock, positive clockwise, y down).
+    val startAngle = when {
+      // Bottom-left: from the bottom edge (90) to the left
+      // edge (180).
+      flipVertical && flipHorizontal -> 90f
+      // Bottom-right: from the right edge (0) down to the
+      // bottom edge (90).
+      flipVertical -> 0f
+      // Top-left: from the left edge (180) to the top edge
+      // (270).
+      flipHorizontal -> 180f
+      // Top-right: from the top edge (-90) to the right edge
+      // (0).
+      else -> -90f
     }
     canvas.drawArc(rect, startAngle, 90f, false, outlinePaint)
     canvas.drawArc(rect, startAngle, 90f, false, paint)
