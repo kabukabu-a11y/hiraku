@@ -26,6 +26,14 @@ After installing, set Hiraku as your default browser so links from other apps ar
 - **URL security check (v2.1.0)**: warns before opening suspicious links (IP-address hosts, punycode domains, URLs with embedded user info). Can be turned off.
 - **And more**: article mode, tabs & history, desktop site toggle, a dedicated settings screen, and a Japanese / English UI (Settings → Language).
 
+## What's new in v2.3.1
+
+- **Bottom bar fixes**: taps now switch tabs (only drags worked before), and the liquid highlight keeps its shape while it slides — it stretches just a little while travelling (never more than about 1.3x) and settles with a spring.
+- **Stronger glass, with a strength setting**: the default glass is more present than in v2.3.0 (denser tint, brighter edge, stronger backdrop blur in overlay windows), and Settings → Appearance → Glass strength now offers Weak / Medium / Strong. The chooser's follow pill always uses the strongest glass. The glass tint no longer changes color between light and dark mode.
+- **Bubbles**: dropping a bubble on the ✕ target actually deletes it now (a bug kept it from firing), the target's hit area is much larger and grows while hot, and bubbles spring back to the edge, slide into place and pop in/out with animations instead of teleporting.
+- **Smoother morphs**: the bubble ⇄ overlay transition now sweeps one broad, gentle arc (OPPO-style) in both directions with a ColorOS-style easing curve, and the peek toggle and overlay menu gained matching motion — the ⋮ button now toggles the menu closed with an animation, too.
+- **Chooser readability**: text and icons on the chooser sheet use a fixed palette that stays readable on the glass whatever is behind it, the sheet's follow pill got a softer in-between liquid feel, and the settings selection popup's highlight can no longer fly out of its frame.
+
 ## What's new in v2.3.0
 
 - **Liquid Glass everywhere**: the chooser sheet, the resident bottom bar, the overlay menu and the bubbles are all glass (translucent tint + platform backdrop blur on Android 12+). Glass can be turned off in Settings, dynamic color follows your device, and ON toggles glow yellow so state is easy to read.
@@ -87,6 +95,14 @@ The ad-blocking list is built from the public [pgl.yoyo.org adservers](https://p
 - **共有先アプリを選択画面に（v2.3.0）**：クイック共有は廃止し、共有を受け付けるアプリが選択画面に「開き方」として直接並ぶようになりました（設定で追加・削除できます）
 - **URLセキュリティチェック（v2.1.0）**：IPアドレスへのリンク、国際化ドメイン（xn--）、ユーザー情報を含むURLなど、怪しいリンクを開く前に警告します（OFFにもできます）
 - **その他**：記事モード、タブと履歴、デスクトップサイト切替、細かい設定を集約した設定画面、日本語／英語の表示切替（設定 → 言語）
+
+## v2.3.1の新機能
+
+- **下のバーを修正**：タップでもタブが切り替わるようになりました（従来はドラッグのみ）。液体ハイライトは形を保ったままスライドし、移動中も少しだけ（最大でも約1.3倍まで）伸びてバネで収まります
+- **ガラスを強化＋強さ設定を追加**：デフォルトのガラスは v2.3.0 よりはっきり強く（色の濃さ・縁の光・オーバーレイ窓の背景ぼかしを強化）なり、設定 → 外観 →「ガラスの強さ」で弱／中／強を選べます。選択シートの追従ピルは常に最強のガラスで描画。ガラスの色はライト／ダークモードで変わらなくなりました
+- **バブル修正**：✕ターゲットに重ねても消えなかったバグを修正し、判定を大きく＋重ねるとターゲットが拡大するように。端へのスナップバック、並び替え、出入りにもアニメーションが付きました
+- **遷移を滑らかに**：バブル⇄オーバーレイの遷移はOPPO風の緩やかな大きな弧を描くようになり（往路・復路とも）、ColorOS系のイージングを採用。ピーク切替とオーバーレイのメニューにも動きが付き、⋮ボタンは再押しでアニメーション付きで閉じるトグル動作になりました
+- **選択シートの可読性**：シート上の文字・アイコンは背景に左右されない固定色になり、追従ピルは中間の柔らかさの液体感に。設定の選択ポップアップのハイライトが枠から飛び出さなくなりました
 
 ## v2.3.0の新機能
 
