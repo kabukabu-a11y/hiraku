@@ -51,6 +51,7 @@ import android.os.Looper
 import android.provider.Settings
 import android.text.TextUtils
 import android.view.Gravity
+import android.view.HapticFeedbackConstants
 import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.View
@@ -453,31 +454,13 @@ class OverlayService : Service() {
     }
     root.addView(column)
 
-    // Resize grip on the corner opposite the bar, so it never covers
-    // the bar buttons. Dragging it resizes the window freely.
-    // v2.3.2 (item 76): the arc is drawn with the window's own
-    // corner radius (28dp) centered on the real corner, so the
-    // stroke traces the frame instead of floating inside a
-    // smaller box the way the v2.3.1 grip did.
-    // v2.3.3 (item 81): the box grows from 48dp to 64dp. The
-    // arc's RectF spans the full 2r (56dp), which overflowed
-    // the 48dp box, and the stroke (2dp over a 3.4dp underlay,
-    // round caps) was clipped at the box edges, leaving the
-    // arc's ends looking cut off. In a 64dp box the whole
-    // RectF plus stroke fits inside, still anchored to the
-    // real corner, so the arc traces the window's corner
-    // circle exactly.
-    val grip = ArcGripView(
-      this,
-      flipVertical = barOnTop,
-      flipHorizontal = false,
-      cornerRadiusPx = cornerRadius
-    ).apply {
-      layoutParams = FrameLayout.LayoutParams(dp(64), dp(64)).apply {
-        gravity = (if (barOnTop) Gravity.BOTTOM else Gravity.TOP) or Gravity.END
-      }
-    }
-    root.addView(grip)
+    // v2.3.7 (item 93): no resize grip on the edge opposite the
+    // bar. Per the ColorOS model (item 86) the far edge is for
+    // MOVING the window (the three-dot long-press handle below),
+    // and resizing lives only on the bar's own corners. Up to
+    // v2.3.6 a 64dp arc grip sat on the far corner, so the top
+    // of the window resized when the user reached for it — the
+    // user reported exactly that on v2.3.5.
 
     var flags = WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL
     var dim = 0f
@@ -567,68 +550,6 @@ class OverlayService : Service() {
             .coerceAtLeast(0)
           p.x = (initialX + (event.rawX - initialRawX).toInt()).coerceIn(0, maxX)
           p.y = (initialY + (event.rawY - initialRawY).toInt()).coerceIn(0, maxY)
-          try {
-            wm.updateViewLayout(r, p)
-          } catch (_: Exception) {
-          }
-          true
-        }
-
-        MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
-          setBlurPaused(false)
-          saveGeometry()
-          v.performClick()
-          true
-        }
-
-        else -> false
-      }
-    }
-
-    // Dragging the grip resizes the window (free size / aspect).
-    var gripStartW = 0
-    var gripStartH = 0
-    var gripRawX = 0f
-    var gripRawY = 0f
-    grip.setOnTouchListener { v, event ->
-      val wm = windowManager ?: return@setOnTouchListener false
-      val r = rootView ?: return@setOnTouchListener false
-      val p = layoutParams ?: return@setOnTouchListener false
-      when (event.actionMasked) {
-        MotionEvent.ACTION_DOWN -> {
-          setBlurPaused(true)
-          gripStartW = p.width
-          gripStartH = p.height
-          gripRawX = event.rawX
-          gripRawY = event.rawY
-          true
-        }
-
-        MotionEvent.ACTION_MOVE -> {
-          if (isMinimized) {
-            isMinimized = false
-            webView?.visibility = View.VISIBLE
-          }
-          isPeek = false
-          val dx = (event.rawX - gripRawX).toInt()
-          // When the bar is at the bottom the grip sits at the top:
-          // dragging up grows the window (its top edge follows).
-          val dy = (event.rawY - gripRawY).toInt()
-          p.width = (gripStartW + dx).coerceIn(dp(260), screenWidth)
-          if (barOnTop) {
-            // The grip is on the bottom edge here: growing the
-            // height moves the bottom edge, which must stay
-            // above the gesture strip (item 80).
-            p.height = (gripStartH + dy).coerceIn(
-              dp(200),
-              (screenHeight - bottomGestureExclusionPx() - p.y)
-                .coerceAtLeast(dp(200))
-            )
-          } else {
-            val newH = (gripStartH - dy).coerceIn(dp(200), screenHeight)
-            p.y = (p.y + (p.height - newH)).coerceAtLeast(0)
-            p.height = newH
-          }
           try {
             wm.updateViewLayout(r, p)
           } catch (_: Exception) {
@@ -907,26 +828,11 @@ class OverlayService : Service() {
       ) { dx, _, p ->
         p.width += dx
       }
-      if (barOnTop) {
-        edgeGrip(
-          Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL,
-          ViewGroup.LayoutParams.MATCH_PARENT,
-          edgeThickness
-        ) { _, dy, p ->
-          p.height += dy
-        }
-      } else {
-        edgeGrip(
-          Gravity.TOP or Gravity.CENTER_HORIZONTAL,
-          ViewGroup.LayoutParams.MATCH_PARENT,
-          edgeThickness
-        ) { _, dy, p ->
-          p.y += dy
-          p.height -= dy
-        }
-      }
-      // Keep the corner grips reachable above the edge strips.
-      grip.bringToFront()
+      // v2.3.7 (item 93): no far-edge resize strip either —
+      // the far edge is move-only (three-dot handle). The two
+      // side strips stay: they resize the width, which the
+      // user has never objected to.
+      // Keep the bar grips reachable above the edge strips.
       barGrips.forEach { it.bringToFront() }
     }
 
@@ -1056,9 +962,12 @@ class OverlayService : Service() {
   private fun lerp(a: Float, b: Float, t: Float): Float = a + (b - a) * t
 
   /**
-   * The subtle move handle (v2.3.0): a small translucent pill
-   * overlapping the page at the edge opposite the bar. Dragging
-   * it moves the window, like dragging the bar's top row.
+   * The move handle: three dots at the center of the edge
+   * opposite the bar, modeled on the ColorOS floating-window
+   * handle (v2.3.7, item 94 — the user's screenshot of his OPPO
+   * home screen, 2026-11-20). Long-press to grab, then drag to
+   * move the window. A plain tap or a short swipe does nothing,
+   * and the far edge never resizes (item 93).
    */
   @SuppressLint("ClickableViewAccessibility")
   private fun addMoveHandle(
@@ -1067,38 +976,59 @@ class OverlayService : Service() {
     screenWidth: Int,
     screenHeight: Int
   ) {
-    // v2.3.1 (item 70): the v2.3.0 handle was a bare 40x5dp pill —
-    // a 5dp-tall touch target is nearly impossible to grab, and
-    // misses landed on the resize edge strip behind it. The handle
-    // is now a 64x26dp touch area with the same 40x5dp pill drawn
-    // at its edge side; the pill's on-page position is unchanged.
+    // Three dots in a row, like the ColorOS handle.
     val handle = FrameLayout(this)
-    val pill = View(this)
-    pill.background = GradientDrawable().apply {
-      shape = GradientDrawable.RECTANGLE
-      cornerRadius = dp(3).toFloat()
-      setColor(0x59FFFFFF)
+    val dots = LinearLayout(this).apply {
+      orientation = LinearLayout.HORIZONTAL
+      gravity = Gravity.CENTER
     }
-    val pillLp = FrameLayout.LayoutParams(dp(40), dp(5)).apply {
+    for (idx in 0 until 3) {
+      val dot = View(this)
+      dot.background = GradientDrawable().apply {
+        shape = GradientDrawable.OVAL
+        setColor(0x8CFFFFFF.toInt())
+      }
+      val dlp = LinearLayout.LayoutParams(dp(5), dp(5))
+      if (idx > 0) dlp.marginStart = dp(5)
+      dot.layoutParams = dlp
+      dots.addView(dot)
+    }
+    val dotsLp = FrameLayout.LayoutParams(
+      ViewGroup.LayoutParams.WRAP_CONTENT,
+      ViewGroup.LayoutParams.WRAP_CONTENT
+    ).apply {
       gravity = (if (barOnTop) Gravity.BOTTOM else Gravity.TOP) or
         Gravity.CENTER_HORIZONTAL
       if (barOnTop) {
-        bottomMargin = dp(4)
+        bottomMargin = dp(6)
       } else {
-        topMargin = dp(4)
+        topMargin = dp(6)
       }
     }
-    pill.layoutParams = pillLp
-    handle.addView(pill)
-    val lp = FrameLayout.LayoutParams(dp(64), dp(26))
+    dots.layoutParams = dotsLp
+    handle.addView(dots)
+    val lp = FrameLayout.LayoutParams(dp(72), dp(28))
     lp.gravity = (if (barOnTop) Gravity.BOTTOM else Gravity.TOP) or
       Gravity.CENTER_HORIZONTAL
     handle.layoutParams = lp
     root.addView(handle)
+
     var startX = 0
     var startY = 0
-    var rawX = 0f
-    var rawY = 0f
+    var downRawX = 0f
+    var downRawY = 0f
+    var lastRawX = 0f
+    var lastRawY = 0f
+    var grabRawX = 0f
+    var grabRawY = 0f
+    var grabbed = false
+    val slop = dp(12)
+    val handler = Handler(Looper.getMainLooper())
+    var pendingGrab: Runnable? = null
+    fun cancelPending() {
+      pendingGrab?.let { handler.removeCallbacks(it) }
+      pendingGrab = null
+    }
     handle.setOnTouchListener { v, event ->
       val wm = windowManager
       val r = rootView
@@ -1108,21 +1038,53 @@ class OverlayService : Service() {
       }
       when (event.actionMasked) {
         MotionEvent.ACTION_DOWN -> {
-          setBlurPaused(true)
-          startX = p.x
-          startY = p.y
-          rawX = event.rawX
-          rawY = event.rawY
+          downRawX = event.rawX
+          downRawY = event.rawY
+          lastRawX = event.rawX
+          lastRawY = event.rawY
+          grabbed = false
+          cancelPending()
+          val task = Runnable {
+            // The long-press fired: grab the window. The drag
+            // origin is re-based on the finger's last known
+            // position so the window does not jump, and the
+            // blur pause starts only now (a mere tap on the
+            // handle must not flicker the backdrop).
+            grabbed = true
+            startX = p.x
+            startY = p.y
+            grabRawX = lastRawX
+            grabRawY = lastRawY
+            setBlurPaused(true)
+            v.performHapticFeedback(
+              HapticFeedbackConstants.LONG_PRESS
+            )
+          }
+          pendingGrab = task
+          handler.postDelayed(task, 300L)
           true
         }
         MotionEvent.ACTION_MOVE -> {
+          lastRawX = event.rawX
+          lastRawY = event.rawY
+          if (!grabbed) {
+            // Moved too far before the long-press fired: this
+            // was a swipe, not a grab — cancel the pending grab
+            // and let the gesture die on the handle.
+            if (abs(event.rawX - downRawX) > slop ||
+              abs(event.rawY - downRawY) > slop
+            ) {
+              cancelPending()
+            }
+            return@setOnTouchListener true
+          }
           val maxX = (screenWidth - p.width).coerceAtLeast(0)
           // The bottom edge stays above the gesture strip
           // (item 80).
           val maxY = (screenHeight - bottomGestureExclusionPx() - p.height)
             .coerceAtLeast(0)
-          p.x = (startX + (event.rawX - rawX).toInt()).coerceIn(0, maxX)
-          p.y = (startY + (event.rawY - rawY).toInt()).coerceIn(0, maxY)
+          p.x = (startX + (event.rawX - grabRawX).toInt()).coerceIn(0, maxX)
+          p.y = (startY + (event.rawY - grabRawY).toInt()).coerceIn(0, maxY)
           try {
             wm.updateViewLayout(r, p)
           } catch (_: Exception) {
@@ -1130,8 +1092,12 @@ class OverlayService : Service() {
           true
         }
         MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
-          setBlurPaused(false)
-          saveGeometry()
+          cancelPending()
+          if (grabbed) {
+            grabbed = false
+            setBlurPaused(false)
+            saveGeometry()
+          }
           v.performClick()
           true
         }

@@ -26,6 +26,22 @@ After installing, set Hiraku as your default browser so links from other apps ar
 - **URL security check (v2.1.0)**: warns before opening suspicious links (IP-address hosts, punycode domains, URLs with embedded user info). Can be turned off.
 - **And more**: article mode, tabs & history, desktop site toggle, a dedicated settings screen, and a Japanese / English UI (Settings → Language).
 
+## What's new in v2.3.7
+
+- **Overlay: the far edge no longer resizes**: following the ColorOS floating-window model, resizing now lives only on the bar's own corners. The far-corner grip and the far edge strip are gone, so reaching for the top of the window no longer starts a resize.
+- **Three-dot move handle (ColorOS style)**: the move handle at the center of the far edge is now three dots, like the handle on OPPO's floating windows. Long-press it to grab the window, then drag to move. A plain tap or a short swipe does nothing.
+- Includes everything from v2.3.6 and v2.3.5 below.
+
+## What's new in v2.3.6
+
+- **Real liquid glass for the main bottom bar (trial)**: on Android 13+, the main screen's bottom bar renders through QmDeve's AndroidLiquidGlassView (MIT license, real refraction + dispersion), layered under the bar's controls. Older Android versions keep the in-house glass. (Library version 1.0.3 is used: 1.0.4 and later declare minCompileSdk 37, which this module cannot satisfy.)
+
+## What's new in v2.3.5
+
+- **Back to Home — the actual root cause**: the bottom bar's gesture handler compared taps against the tab index captured when the app started (its pointerInput never restarts), so after leaving Home, taps on Home were silently discarded as "already selected" — the pill moved, the screen didn't. The handler now always reads the current tab, and drag-release targets are judged by finger position. This supersedes the v2.3.4 note below, which was a misdiagnosis.
+- **White line on bar press — fixed**: the pill's border double-composited into a bright outline, and the velocity squash lacked an absolute value, so moving left swelled the pill vertically until its white edge poked out of the bar. Border removed, single flat fill, squash uses speed magnitude only.
+- **Overlay bar grips — fixed**: the bar-corner grips now decide tap vs. drag by movement. A drag resizes (width and height independently, so aspect adjustment works), a tap reaches the close / menu button underneath.
+
 ## What's new in v2.3.4
 
 - **Crash when adjusting the overlay window — fixed**: v2.3.3 paused the backdrop blur during drags by removing and re-adding the whole window, and on ColorOS that crashed the service as soon as a resize or move started. Drag-time blur flips now only update the window's layout params in place; the re-attach remains only for passthrough transitions, which happen outside any drag.
@@ -124,6 +140,22 @@ The ad-blocking list is built from the public [pgl.yoyo.org adservers](https://p
 - **共有先アプリを選択画面に（v2.3.0）**：クイック共有は廃止し、共有を受け付けるアプリが選択画面に「開き方」として直接並ぶようになりました（設定で追加・削除できます）
 - **URLセキュリティチェック（v2.1.0）**：IPアドレスへのリンク、国際化ドメイン（xn--）、ユーザー情報を含むURLなど、怪しいリンクを開く前に警告します（OFFにもできます）
 - **その他**：記事モード、タブと履歴、デスクトップサイト切替、細かい設定を集約した設定画面、日本語／英語の表示切替（設定 → 言語）
+
+## v2.3.7の新機能
+
+- **オーバーレイ：バーと反対側の辺ではリサイズしないように**：ColorOSのフローティング窓の作法に合わせ、リサイズはバーのある側の角だけに統一しました。反対側の角グリップと辺のストリップは廃止したので、窓の上部をつかんでもリサイズが始まりません
+- **3点ドットの移動ハンドル（ColorOS風）**：バーと反対側の辺の中央にある移動ハンドルが、OPPOのフローティング窓と同じ「○○○」になりました。長押しで窓をつかんで、そのままドラッグで位置移動。タップや短いスワイプでは動きません
+- v2.3.6とv2.3.5の内容もすべて含みます
+
+## v2.3.6の新機能
+
+- **メイン下バーに本物の液体ガラス（試験導入）**：Android 13以降では、メイン画面の下バーの背後にQmDeveのAndroidLiquidGlassView（MITライセンス、本物の屈折＋分散）を敷くようになりました。それ未満のAndroidでは従来の自前ガラスです（ライブラリは1.0.3を使用：1.0.4以降はminCompileSdk 37を要求するため、このモジュールでは使えません）
+
+## v2.3.5の新機能
+
+- **ホームに戻れない問題を本当の原因で修正**：下バーのジェスチャ処理が、アプリ起動時のタブ（ホーム）とタップを比べ続けていました（pointerInputが再起動されず値を掴んだまま）。ホームを一度離れるとホームへのタップが「選択済み」として捨てられ、ピルだけ動いて画面が切り替わりませんでした。現在タブを常に読むよう直し、ドラッグ後の行き先は指の位置で判定します。※下のv2.3.4の説明は誤診だったので、この版の説明が正しいものです
+- **バーを押した時の白い線を修正**：ピルの枠線が二重に合成されて明るい輪郭になっていたのと、速度スキッシュに絶対値が無く、左へ動かすとピルが縦に膨らんで白い縁がバーからはみ出していました。枠線を廃止し単一の色塗りに、スキッシュは速度の大きさだけを使うよう修正
+- **オーバーレイ窓のサイズ調整グリップを修正**：バーの角グリップが、動きの量でタップとドラッグを判別するようになりました。ドラッグすればリサイズ（幅・高さ独立＝比率調整も可能）、タップは下の閉じる／メニューボタンに届きます
 
 ## v2.3.4の新機能
 
