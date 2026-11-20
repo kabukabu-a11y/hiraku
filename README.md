@@ -26,6 +26,17 @@ After installing, set Hiraku as your default browser so links from other apps ar
 - **URL security check (v2.1.0)**: warns before opening suspicious links (IP-address hosts, punycode domains, URLs with embedded user info). Can be turned off.
 - **And more**: article mode, tabs & history, desktop site toggle, a dedicated settings screen, and a Japanese / English UI (Settings → Language).
 
+## What's new in v2.3.3
+
+- **Home gesture, audited end to end**: the gesture still failed on device — even while only the main app was in use — so every window Hiraku can have alive was audited. The gesture-free strip at the bottom of the screen is now a 64dp-class exclusion (ColorOS's gesture area is wider than the nominal navigation bar), and it applies uniformly: the overlay's main window (default shape, title drags, corner grips, edge strips, move handle), both tap catchers, the ⋮ menu's bottom edge, and the bubbles' dock position (a bubble being dragged may pass through the strip; where it docks may not). The main app's activities were checked too — no full-screen touch layers or gesture-stealing window flags there.
+- **Resize from the bottom corners too**: the bar's own edge had no resize affordance — only the far corner grip and the far edge strips. Both corners of the bar edge now carry corner grips (ColorOS 17 mini-window style): drag a bottom corner and the window resizes with its top edge fixed. The grips are small corner areas, so bar buttons keep their taps, and like the existing corner grip they work even with free resize turned off.
+- **The page stays visible while resizing**: the drag-time opaque cover that blacked out the whole window (WebView included) is gone. The backdrop-blur pause is now done by re-attaching the window itself with the blur flag off — the same root view and layout params, only the blur attributes change — so the page never disappears mid-drag.
+- **Blur is always off while you use the app underneath**: entering passthrough now takes a blur pause of its own, and exiting restores the blur per your overlay-blur setting. Drag pauses and the passthrough pause are counted together, so the blur only returns once every hold is released.
+- **Corner grip arc no longer clipped**: the grip's box was smaller than the arc it draws (48dp box, 56dp arc), so the arc's ends were cut off. The box is now 64dp and the arc sits exactly on the window's real 28dp corner circle, in all four corner orientations.
+- **The bubble ✕ target no longer clips when it grows**: the trash window was exactly the circle's size, so the 1.18x hot scale spilled past the window surface. The window now carries padding around a centered inner circle, and the scale applies to the circle only.
+- **Chooser preview card joins the glass**: the link preview card was a solid surface color — pitch black in dark mode, with its title nearly unreadable. It now uses the sheet's glass background, with the title and URLs in the glass content colors (the security-check line keeps its status colors).
+- **No more white streak on the bottom bar**: pressing a bar item compressed the highlight capsule's bright gradient band into a visible white line. The capsule fill is now near-flat and its border fainter; the motion itself is unchanged.
+
 ## What's new in v2.3.2
 
 - **The bottom bar is rebuilt on MeiloX's actual glass implementation**: v2.3.1's bar only looked glass-like — it painted a flat tint and a solid-color highlight. The bar now uses the real values from Glasmio (the glass library MeiloX ships with): the measured iOS container tint (0xFF1C1C1E at 54%), the glass capsule highlight (a translucent white fill with a lit edge instead of a solid color), and the exact spring constants of Glasmio's DampedDragAnimation — value spring (damping 1, stiffness 1000), press lift and scale springs, and its velocity "squash" on the moving highlight, capped at ±0.2 exactly as in Glasmio's GlassBottomBar. (Glasmio's refraction shader pipeline itself needs a newer Kotlin/Compose toolchain than Hiraku's, so the rendering is Hiraku's platform blur + these sourced values.)
@@ -107,6 +118,17 @@ The ad-blocking list is built from the public [pgl.yoyo.org adservers](https://p
 - **共有先アプリを選択画面に（v2.3.0）**：クイック共有は廃止し、共有を受け付けるアプリが選択画面に「開き方」として直接並ぶようになりました（設定で追加・削除できます）
 - **URLセキュリティチェック（v2.1.0）**：IPアドレスへのリンク、国際化ドメイン（xn--）、ユーザー情報を含むURLなど、怪しいリンクを開く前に警告します（OFFにもできます）
 - **その他**：記事モード、タブと履歴、デスクトップサイト切替、細かい設定を集約した設定画面、日本語／英語の表示切替（設定 → 言語）
+
+## v2.3.3の新機能
+
+- **ホームジェスチャを全面監査**：実機では本体アプリを使っているだけでもジェスチャが効かなかったため、Hirakuが生きている間に持つ窓をすべて洗い出しました。画面下端のジェスチャ禁止帯は64dp級に広げ（ColorOSのジェスチャ判定域は公称のナビバー高より広いため）、適用先も統一：オーバーレイのメイン窓（デフォルト形状・タイトルドラッグ・角グリップ・辺ストリップ・移動ハンドル）、2種のタップ受け窓、︙メニューの下端、バブルのドック位置（ドラッグ中の通過は可、止まる位置は帯の外）。本体アプリのActivity側も確認済みで、全画面のタッチ層やジェスチャを奪う窓フラグはありませんでした
+- **下の角からもリサイズ可能に**：従来のリサイズ導線はバー反対側の角グリップと遠辺ストリップだけで、バー側（下）には何もありませんでした。ColorOS 17の小窓方式で、バー側の左右両角にも角グリップを追加。下の角を引くと上端を固定したままリサイズできます。グリップは角の小領域だけなのでバーのボタンは従来どおり効き、既存の角グリップと同じく自由リサイズ設定OFFでも使えます
+- **リサイズ中もページが見えるように**：ドラッグ中に窓全体（WebView含む）を真っ黒に覆っていた不透明カバーを廃止。背景ぼかしの一時停止は「窓自体をぼかしフラグOFFで付け直す」方式に変えました（同じrootビューと同じparamsで、ぼかし属性だけ差し替え）。ドラッグ中にページが消えることはありません
+- **下のアプリを操作している間はぼかしを必ずOFF**：パススルー開始でぼかし停止を保持し、終了時にオーバーレイぼかし設定どおり復帰させます。ドラッグによる停止とパススルーによる停止はカウンタで合算管理し、両方が解除されるまで復帰しません
+- **角グリップの弧の欠けを修正**：グリップの箱（48dp）より描く弧（56dp）の方が大きく、弧の端が切れていました。箱を64dpに広げ、弧は窓の実際の角丸28dpの円に正確に重なります（4つの角の向きすべて対応）
+- **バブルの✕ターゲットの拡大時の欠けを修正**：✕窓が円と同寸だったため、ホット時の1.18倍拡大が窓の表面からはみ出して縁が切れていました。窓に余白を持たせ、円は中央の内側ビューにして拡大は円だけにかけるよう変更
+- **選択シートのプレビューカードをガラスに**：リンクプレビューカードは単色のsurfaceで、ダーク時は真っ黒になりタイトルもほぼ読めませんでした。シートと同じガラス背景にし、タイトルとURLはガラス用の文字色を明示（セキュリティチェック行の状態色は維持）
+- **下バーの白い筋を解消**：バーの項目を押すと、ハイライトカプセルの明るいグラデーション帯がスカッシュで圧縮されて白い線に見えていました。塗りをほぼ均一にし、縁のアルファも下げました（動き自体は変更なし）
 
 ## v2.3.2の新機能
 
