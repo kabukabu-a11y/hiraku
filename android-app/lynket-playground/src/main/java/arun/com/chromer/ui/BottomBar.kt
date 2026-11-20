@@ -272,7 +272,7 @@ fun HirakuBottomBar(
                 }
                 change.consume()
                 if (!isDrag &&
-                  kotlin.math.abs(change.position.x - startX) >
+                  kotlin.math.abs(change.position.x - startX).toFloat() >
                   viewConfiguration.touchSlop
                 ) {
                   isDrag = true
