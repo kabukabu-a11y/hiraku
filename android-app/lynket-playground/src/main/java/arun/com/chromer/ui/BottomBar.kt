@@ -242,13 +242,13 @@ fun HirakuBottomBar(
   Box(
     modifier = modifier
       .fillMaxWidth()
-      .padding(horizontal = 20.dp, vertical = 10.dp)
+      .padding(horizontal = 20.dp, vertical = 8.dp)
   ) {
     val shape = RoundedCornerShape(50)
     BoxWithConstraints(
       modifier = Modifier
         .fillMaxWidth()
-        .height(64.dp)
+        .height(62.dp)
         .shadow(18.dp, shape, clip = false)
         .then(
           if (externalGlass) {
@@ -279,8 +279,9 @@ fun HirakuBottomBar(
       // v2.3.5 (item 90): the squash terms are magnitude-only.
       // With the old signed terms, moving LEFT made termY
       // negative, so scaleY GREW (up to 1.06 * 1.2) instead of
-      // shrinking: the 56dp pill swelled to ~71dp inside the
-      // 64dp bar and its white edge poked out of the bar's top
+      // shrinking: the pill (56dp at the time, 54dp since
+      // v2.3.8) swelled to ~71dp inside the bar (64dp then,
+      // 62dp now) and its white edge poked out of the bar's top
       // and bottom — the "white line" seen when pressing or
       // travelling. The pill now stretches along X and thins
       // along Y in both directions.
@@ -297,7 +298,7 @@ fun HirakuBottomBar(
             y = 4.dp
           )
           .width(pillWidth)
-          .height(56.dp)
+          .height(54.dp)
           .graphicsLayer {
             this.scaleX = scaleX.value / (1f - termX)
             this.scaleY = scaleY.value * (1f - termY)

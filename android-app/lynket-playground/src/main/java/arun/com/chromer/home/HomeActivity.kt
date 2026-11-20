@@ -174,8 +174,9 @@ class HomeActivity : ComponentActivity(), HasInjector {
    * The layered home screen for the liquid-glass trial: tab
    * content in its own ComposeView (the glass view's sampling
    * source), the LiquidGlassView aligned exactly with the bar
-   * body (20dp side margins, 64dp tall, 10dp above the bottom —
-   * the same geometry HirakuBottomBar uses), and the bar in a
+   * body (20dp side margins, 62dp tall, 8dp above the bottom —
+   * the MeiloX / Glasmio metrics HirakuBottomBar uses since
+   * v2.3.8), and the bar in a
    * second ComposeView on top.
    */
   private fun setupLayeredGlass() {
@@ -214,14 +215,14 @@ class HomeActivity : ComponentActivity(), HasInjector {
     val glassView = LiquidGlassView(this).apply {
       layoutParams = FrameLayout.LayoutParams(
         FrameLayout.LayoutParams.MATCH_PARENT,
-        dp(64)
+        dp(62)
       ).apply {
         gravity = Gravity.BOTTOM
         leftMargin = dp(20)
         rightMargin = dp(20)
-        bottomMargin = dp(10)
+        bottomMargin = dp(8)
       }
-      setCornerRadius(dp(32).toFloat())
+      setCornerRadius(dp(31).toFloat())
       // The in-house glass tint (0xFF1C1C1E), unchanged in dark
       // mode per the design rule; alpha matches its strength.
       setTintColorRed(0x1C / 255f)
@@ -795,7 +796,7 @@ private fun HomeTabContent(
 
     // Clearance so the last rows are never hidden behind the
     // floating bottom bar (v2.3.0).
-    Spacer(modifier = Modifier.height(84.dp))
+    Spacer(modifier = Modifier.height(78.dp))
   }
 }
 

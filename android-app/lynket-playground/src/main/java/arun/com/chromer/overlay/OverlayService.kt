@@ -51,7 +51,6 @@ import android.os.Looper
 import android.provider.Settings
 import android.text.TextUtils
 import android.view.Gravity
-import android.view.HapticFeedbackConstants
 import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.View
@@ -456,7 +455,7 @@ class OverlayService : Service() {
 
     // v2.3.7 (item 93): no resize grip on the edge opposite the
     // bar. Per the ColorOS model (item 86) the far edge is for
-    // MOVING the window (the three-dot long-press handle below),
+    // MOVING the window (the three-dot handle below),
     // and resizing lives only on the bar's own corners. Up to
     // v2.3.6 a 64dp arc grip sat on the far corner, so the top
     // of the window resized when the user reached for it — the
@@ -965,9 +964,11 @@ class OverlayService : Service() {
    * The move handle: three dots at the center of the edge
    * opposite the bar, modeled on the ColorOS floating-window
    * handle (v2.3.7, item 94 — the user's screenshot of his OPPO
-   * home screen, 2026-11-20). Long-press to grab, then drag to
-   * move the window. A plain tap or a short swipe does nothing,
-   * and the far edge never resizes (item 93).
+   * home screen, 2026-11-20). Dragging it moves the window
+   * immediately (v2.3.8: a long-press gate was tried in v2.3.7
+   * and the user rejected it — the handle exists only to adjust
+   * the window's position, so it must just move). The far edge
+   * never resizes (item 93).
    */
   @SuppressLint("ClickableViewAccessibility")
   private fun addMoveHandle(
@@ -1015,20 +1016,8 @@ class OverlayService : Service() {
 
     var startX = 0
     var startY = 0
-    var downRawX = 0f
-    var downRawY = 0f
-    var lastRawX = 0f
-    var lastRawY = 0f
-    var grabRawX = 0f
-    var grabRawY = 0f
-    var grabbed = false
-    val slop = dp(12)
-    val handler = Handler(Looper.getMainLooper())
-    var pendingGrab: Runnable? = null
-    fun cancelPending() {
-      pendingGrab?.let { handler.removeCallbacks(it) }
-      pendingGrab = null
-    }
+    var rawX = 0f
+    var rawY = 0f
     handle.setOnTouchListener { v, event ->
       val wm = windowManager
       val r = rootView
@@ -1038,53 +1027,21 @@ class OverlayService : Service() {
       }
       when (event.actionMasked) {
         MotionEvent.ACTION_DOWN -> {
-          downRawX = event.rawX
-          downRawY = event.rawY
-          lastRawX = event.rawX
-          lastRawY = event.rawY
-          grabbed = false
-          cancelPending()
-          val task = Runnable {
-            // The long-press fired: grab the window. The drag
-            // origin is re-based on the finger's last known
-            // position so the window does not jump, and the
-            // blur pause starts only now (a mere tap on the
-            // handle must not flicker the backdrop).
-            grabbed = true
-            startX = p.x
-            startY = p.y
-            grabRawX = lastRawX
-            grabRawY = lastRawY
-            setBlurPaused(true)
-            v.performHapticFeedback(
-              HapticFeedbackConstants.LONG_PRESS
-            )
-          }
-          pendingGrab = task
-          handler.postDelayed(task, 300L)
+          setBlurPaused(true)
+          startX = p.x
+          startY = p.y
+          rawX = event.rawX
+          rawY = event.rawY
           true
         }
         MotionEvent.ACTION_MOVE -> {
-          lastRawX = event.rawX
-          lastRawY = event.rawY
-          if (!grabbed) {
-            // Moved too far before the long-press fired: this
-            // was a swipe, not a grab — cancel the pending grab
-            // and let the gesture die on the handle.
-            if (abs(event.rawX - downRawX) > slop ||
-              abs(event.rawY - downRawY) > slop
-            ) {
-              cancelPending()
-            }
-            return@setOnTouchListener true
-          }
           val maxX = (screenWidth - p.width).coerceAtLeast(0)
           // The bottom edge stays above the gesture strip
           // (item 80).
           val maxY = (screenHeight - bottomGestureExclusionPx() - p.height)
             .coerceAtLeast(0)
-          p.x = (startX + (event.rawX - grabRawX).toInt()).coerceIn(0, maxX)
-          p.y = (startY + (event.rawY - grabRawY).toInt()).coerceIn(0, maxY)
+          p.x = (startX + (event.rawX - rawX).toInt()).coerceIn(0, maxX)
+          p.y = (startY + (event.rawY - rawY).toInt()).coerceIn(0, maxY)
           try {
             wm.updateViewLayout(r, p)
           } catch (_: Exception) {
@@ -1092,12 +1049,8 @@ class OverlayService : Service() {
           true
         }
         MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
-          cancelPending()
-          if (grabbed) {
-            grabbed = false
-            setBlurPaused(false)
-            saveGeometry()
-          }
+          setBlurPaused(false)
+          saveGeometry()
           v.performClick()
           true
         }

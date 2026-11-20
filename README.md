@@ -26,6 +26,11 @@ After installing, set Hiraku as your default browser so links from other apps ar
 - **URL security check (v2.1.0)**: warns before opening suspicious links (IP-address hosts, punycode domains, URLs with embedded user info). Can be turned off.
 - **And more**: article mode, tabs & history, desktop site toggle, a dedicated settings screen, and a Japanese / English UI (Settings → Language).
 
+## What's new in v2.3.8
+
+- **Bottom bar geometry aligned with MeiloX / Glasmio**: the bar surface is now 62dp tall (was 64dp) with a 54dp indicator pill and an 8dp bottom margin (was 10dp) — the exact metrics of Glasmio's GlassBottomBar as MeiloX ships it. The liquid-glass layer follows the same geometry. (The real glass stays on the main bottom bar only, by design choice.)
+- **Overlay move handle: immediate drag is back**: the three-dot handle from v2.3.7 no longer needs a long-press — it moves the window as soon as you drag it, like before. The handle exists only to adjust the window's position, so it should just move.
+
 ## What's new in v2.3.7
 
 - **Overlay: the far edge no longer resizes**: following the ColorOS floating-window model, resizing now lives only on the bar's own corners. The far-corner grip and the far edge strip are gone, so reaching for the top of the window no longer starts a resize.
@@ -140,6 +145,11 @@ The ad-blocking list is built from the public [pgl.yoyo.org adservers](https://p
 - **共有先アプリを選択画面に（v2.3.0）**：クイック共有は廃止し、共有を受け付けるアプリが選択画面に「開き方」として直接並ぶようになりました（設定で追加・削除できます）
 - **URLセキュリティチェック（v2.1.0）**：IPアドレスへのリンク、国際化ドメイン（xn--）、ユーザー情報を含むURLなど、怪しいリンクを開く前に警告します（OFFにもできます）
 - **その他**：記事モード、タブと履歴、デスクトップサイト切替、細かい設定を集約した設定画面、日本語／英語の表示切替（設定 → 言語）
+
+## v2.3.8の新機能
+
+- **下バーの寸法をMeiloX／Glasmioに合わせました**：バーの高さ62dp（従来64dp）、ピル54dp、下マージン8dp（従来10dp）— MeiloXが採用するGlasmioのGlassBottomBarの実寸そのままです。液体ガラスの層も同じ寸法に追従します（本物ガラスはメインの下バーだけ、という方針は維持）
+- **オーバーレイの移動ハンドル：即ドラッグに戻しました**：v2.3.7の3点ドットは長押し不要になり、掴んでドラッグすればすぐ窓が動きます（以前の動作）。位置合わせ専用のハンドルなので、これが正しい挙動です
 
 ## v2.3.7の新機能
 
