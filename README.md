@@ -26,6 +26,12 @@ After installing, set Hiraku as your default browser so links from other apps ar
 - **URL security check (v2.1.0)**: warns before opening suspicious links (IP-address hosts, punycode domains, URLs with embedded user info). Can be turned off.
 - **And more**: article mode, tabs & history, desktop site toggle, a dedicated settings screen, and a Japanese / English UI (Settings → Language).
 
+## What's new in v2.3.12
+
+Includes v2.3.11 below, plus:
+
+- **Bubbles no longer blur the background**: the backdrop blur added to bubbles in v2.3.9 fogged the whole background behind the bubble on device. Removed — bubbles keep their translucent site-color glass tint, and the app underneath shows through unblurred.
+
 ## What's new in v2.3.11
 
 - **The main bar's pill and its glass are now one element**: in v2.3.10 the pill's refraction lived on a separate glass view slid along by a position callback — it lagged behind the pill at high speed and did not grow when you pressed and held. The glass now sits inside the bar as the pill itself, driven by the pill's own animation: movement, press growth and velocity squash all apply to the glass directly, with nothing left to drift apart.
@@ -163,6 +169,12 @@ The ad-blocking list is built from the public [pgl.yoyo.org adservers](https://p
 - **共有先アプリを選択画面に（v2.3.0）**：クイック共有は廃止し、共有を受け付けるアプリが選択画面に「開き方」として直接並ぶようになりました（設定で追加・削除できます）
 - **URLセキュリティチェック（v2.1.0）**：IPアドレスへのリンク、国際化ドメイン（xn--）、ユーザー情報を含むURLなど、怪しいリンクを開く前に警告します（OFFにもできます）
 - **その他**：記事モード、タブと履歴、デスクトップサイト切替、細かい設定を集約した設定画面、日本語／英語の表示切替（設定 → 言語）
+
+## v2.3.12の新機能
+
+下のv2.3.11の内容を含みます。追加分：
+
+- **バブルで背景をぼかさないように**：v2.3.9でバブルに入れた背景ぼかしが、実機ではバブルの後ろ全体を曇らせてしまいました。ぼかしを外し、バブルは半透明のサイト色ガラスのまま、下のアプリがぼけずに見える形に戻しました
 
 ## v2.3.11の新機能
 
