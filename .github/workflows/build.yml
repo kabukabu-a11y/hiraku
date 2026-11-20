@@ -43,12 +43,3 @@ jobs:
         with:
           name: lynket-playground-release
           path: android-app/lynket-playground/build/outputs/apk/release/*.apk
-      - name: Dump compile errors as annotations (temporary CI debug)
-        if: failure()
-        run: |
-          ./gradlew :lynket-playground:compileReleaseKotlin --console=plain > /tmp/buildlog.txt 2>&1 || true
-          grep -E "^e: |FAILED|error:" /tmp/buildlog.txt | head -30 | while IFS= read -r line; do
-            esc=$(printf '%s' "$line" | sed 's/%/%25/g; s/\r/%0D/g; s/\n/%0A/g')
-            echo "::error::$esc"
-          done
-          true

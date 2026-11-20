@@ -28,6 +28,7 @@ import android.view.animation.PathInterpolator
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.AnimationSpec
 import androidx.compose.animation.core.CubicBezierEasing
+import androidx.compose.animation.core.FiniteAnimationSpec
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.snap
@@ -178,7 +179,9 @@ object IosMotion {
 
   /** Ready-made sheet specs: Float values and IntOffset slides. */
   val SHEET: AnimationSpec<Float> = spring(SHEET_DAMPING, SHEET_STIFFNESS)
-  val SHEET_OFFSET: AnimationSpec<IntOffset> =
+  // FiniteAnimationSpec: slideInVertically/slideOutVertically
+  // reject the wider AnimationSpec type.
+  val SHEET_OFFSET: FiniteAnimationSpec<IntOffset> =
     spring(SHEET_DAMPING, SHEET_STIFFNESS)
 
   /** Velocity squash cap of the tab indicator layer: ±0.2 (GlassBottomBar). */
