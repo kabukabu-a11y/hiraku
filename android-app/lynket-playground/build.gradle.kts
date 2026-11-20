@@ -75,17 +75,6 @@ kotlin {
   }
 }
 
-configure<org.jetbrains.kotlin.gradle.plugin.KaptExtension> {
-  // Incremental annotation processing is a frequent source of
-  // opaque worker failures after a Kotlin upgrade; the project is
-  // small enough not to need it. (Configured via configure<> rather
-  // than the kapt {} accessor: adding the accessor block made the
-  // Kotlin DSL re-resolve the android {} accessor to AGP's
-  // error-deprecated legacy variant and the script stopped
-  // compiling.)
-  incrementalApt = false
-}
-
 // Something in the plugin stack (Whetstone/Anvil) pins the language
 // version to 1.9, which the Kotlin 2.4 compiler rejects outright
 // (UNSUPPORTED_LANGUAGE_VERSION in kaptGenerateStubs). Force 2.4 on
