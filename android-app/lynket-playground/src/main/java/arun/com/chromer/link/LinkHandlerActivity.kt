@@ -25,11 +25,14 @@ import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
+import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
@@ -50,13 +53,12 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Share
@@ -66,29 +68,34 @@ import androidx.compose.material3.Checkbox
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import arun.com.chromer.R
 import androidx.compose.ui.res.stringResource
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.dp
 import arun.com.chromer.browser.BrowserActivity
+import arun.com.chromer.customtab.ChooserItem
 import arun.com.chromer.customtab.LinkDispatcher
 import arun.com.chromer.customtab.LinkPreferences
 import arun.com.chromer.customtab.OpenMethod
@@ -97,9 +104,15 @@ import arun.com.chromer.customtab.displayLabel
 import arun.com.chromer.customtab.iconPackage
 import arun.com.chromer.history.HistoryStore
 import arun.com.chromer.theme.LynketTheme
+import arun.com.chromer.ui.HirakuToggle
+import arun.com.chromer.ui.appLabel
+import arun.com.chromer.ui.glassBackground
+import arun.com.chromer.ui.rememberAppIcon
 import java.net.HttpURLConnection
 import java.net.URL
+import kotlin.math.roundToInt
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 /**
@@ -288,16 +301,18 @@ class LinkHandlerActivity : ComponentActivity() {
     secret: Boolean
   ) {
     val context = LocalContext.current
+    val activity = this@LinkHandlerActivity
     val previewEnabled = remember { LinkPreferences.isPreviewEnabled(context) }
     val animLevel = remember { LinkPreferences.getAnimLevel(context) }
+    val glassOn = remember { LinkPreferences.isGlassEnabled(context) }
     var pageTitle by remember { mutableStateOf<String?>(null) }
     var favicon by remember { mutableStateOf<Bitmap?>(null) }
-    var collapsed by remember { mutableStateOf(false) }
     var fixForApp by remember { mutableStateOf(false) }
     var fixForSite by remember { mutableStateOf(false) }
     var secretOn by remember { mutableStateOf(secret) }
-    var sheetShown by remember { mutableStateOf(animLevel == LinkPreferences.ANIM_OFF) }
-    var rowsShown by remember { mutableIntStateOf(0) }
+    var sheetShown by remember {
+      mutableStateOf(animLevel == LinkPreferences.ANIM_OFF)
+    }
 
     val host = remember(url) {
       try {
@@ -315,34 +330,12 @@ class LinkHandlerActivity : ComponentActivity() {
     }
     val securityCheckOn = remember { LinkPreferences.isSecurityCheckEnabled(context) }
 
-    // The standard method is pinned to the top (v2.1.0); the rest keep
-    // the user's customized order.
-    val methods = remember {
-      val visible = LinkPreferences.getChooserMethods(context)
-      val default = LinkPreferences.getDefaultMethod(context)
-      if (default in visible) {
-        listOf(default) + visible.filter { it != default }
-      } else {
-        visible
-      }
-    }
-    val labels = remember {
-      methods.associateWith { it.displayLabel(context) }
-    }
-    val iconPackages = remember {
-      methods.associateWith { it.iconPackage(context) }
-    }
+    // v2.3.0: one unified list — open methods and share-target apps
+    // in the user's own order, Cancel pinned to the bottom.
+    val items = remember { LinkPreferences.getChooserDisplayItems(context) }
 
     LaunchedEffect(url) {
       sheetShown = true
-      if (animLevel == LinkPreferences.ANIM_STRONG) {
-        for (i in methods.indices) {
-          kotlinx.coroutines.delay(45)
-          rowsShown = i + 1
-        }
-      } else {
-        rowsShown = methods.size
-      }
       if (previewEnabled) {
         if (!host.isNullOrBlank()) {
           favicon = loadFavicon(host)
@@ -351,10 +344,111 @@ class LinkHandlerActivity : ComponentActivity() {
       }
     }
 
+    // Real backdrop blur behind the sheet window (API 31+).
+    DisposableEffect(Unit) {
+      if (Build.VERSION.SDK_INT >= 31 && glassOn) {
+        try {
+          window.addFlags(WindowManager.LayoutParams.FLAG_BLUR_BEHIND)
+          window.attributes = window.attributes.apply { blurBehindRadius = 64 }
+        } catch (_: Exception) {
+        }
+      }
+      onDispose {
+        try {
+          window.clearFlags(WindowManager.LayoutParams.FLAG_BLUR_BEHIND)
+          window.attributes = window.attributes.apply { blurBehindRadius = 0 }
+        } catch (_: Exception) {
+        }
+      }
+    }
+
+    fun choose(item: ChooserItem) {
+      when (item) {
+        is ChooserItem.MethodItem -> {
+          val method = item.method
+          if (method != OpenMethod.CANCEL && method != OpenMethod.ASK) {
+            if (fixForApp && referrerPackage != null) {
+              LinkPreferences.setAppRule(context, referrerPackage, method)
+            }
+            if (fixForSite && !host.isNullOrBlank()) {
+              LinkPreferences.setSiteRule(context, host, method)
+            }
+          }
+          if (method != OpenMethod.CANCEL && !secretOn) {
+            HistoryStore.record(context, url, pageTitle ?: url)
+          }
+          LinkDispatcher.open(activity, url, method, secretOn)
+          finish()
+        }
+        is ChooserItem.ShareItem -> {
+          if (!secretOn) {
+            HistoryStore.record(context, url, pageTitle ?: url)
+          }
+          val send = Intent(Intent.ACTION_SEND).apply {
+            type = "text/plain"
+            putExtra(Intent.EXTRA_TEXT, url)
+            setPackage(item.packageName)
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+          }
+          try {
+            context.startActivity(send)
+          } catch (_: Exception) {
+            LinkDispatcher.shareSystem(context, url)
+          }
+          finish()
+        }
+      }
+    }
+
+    // Continuous expand / collapse: the handle drag moves the
+    // fraction directly, and releasing springs to the nearer end.
+    val scope = rememberCoroutineScope()
+    val expandAnim = remember { Animatable(1f) }
+    var expandTarget by remember { mutableStateOf(1f) }
+    var fullExtraPx by remember { mutableStateOf(1) }
+    fun settleExpand(target: Float) {
+      expandTarget = target
+      scope.launch {
+        if (animLevel == LinkPreferences.ANIM_OFF) {
+          expandAnim.snapTo(target)
+        } else {
+          expandAnim.animateTo(
+            target,
+            spring(
+              dampingRatio = Spring.DampingRatioMediumBouncy,
+              stiffness = Spring.StiffnessMediumLow
+            )
+          )
+        }
+      }
+    }
+
+    val rowHeight = 54.dp
+    val density = LocalDensity.current
+    val rowHeightPx = with(density) { rowHeight.toPx() }
+    var hoverIndex by remember { mutableStateOf<Int?>(null) }
+    val pillAnim = remember { Animatable(0f) }
+    LaunchedEffect(hoverIndex) {
+      val target = hoverIndex
+      if (target != null) {
+        if (animLevel == LinkPreferences.ANIM_OFF) {
+          pillAnim.snapTo(target.toFloat())
+        } else {
+          pillAnim.animateTo(
+            target.toFloat(),
+            spring(
+              dampingRatio = 0.8f,
+              stiffness = Spring.StiffnessMedium
+            )
+          )
+        }
+      }
+    }
+
     Box(
       modifier = Modifier
         .fillMaxSize()
-        .background(Color(0x99000000))
+        .background(Color(0x66000000))
         .clickable { finish() },
       contentAlignment = Alignment.BottomCenter
     ) {
@@ -372,93 +466,114 @@ class LinkHandlerActivity : ComponentActivity() {
           ) + fadeIn(tween(200))
         },
         modifier = Modifier
-          .padding(horizontal = 20.dp, vertical = 20.dp)
-          .widthIn(max = 440.dp)
+          .padding(horizontal = 10.dp)
+          .widthIn(max = 600.dp)
       ) {
-        Card(
-          shape = RoundedCornerShape(24.dp),
+        val sheetShape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp)
+        Column(
           modifier = Modifier
             .fillMaxWidth()
+            .glassBackground(sheetShape)
             .clickable(enabled = false) { }
+            .padding(horizontal = 16.dp)
+            .padding(bottom = 16.dp)
         ) {
-          Column(
+          // Drag handle at the very top: drag follows the finger,
+          // release springs open or shut.
+          Box(
             modifier = Modifier
               .fillMaxWidth()
-              .verticalScroll(rememberScrollState())
-              .padding(horizontal = 20.dp, vertical = 12.dp),
-            verticalArrangement = Arrangement.spacedBy(4.dp)
+              .height(30.dp)
+              .pointerInput(Unit) {
+                detectVerticalDragGestures(
+                  onDragStart = { },
+                  onVerticalDrag = { _, dragAmount ->
+                    val delta = -dragAmount / fullExtraPx.coerceAtLeast(1)
+                    val next = (expandAnim.value + delta).coerceIn(0f, 1f)
+                    scope.launch { expandAnim.snapTo(next) }
+                  },
+                  onDragEnd = {
+                    settleExpand(if (expandAnim.value > 0.5f) 1f else 0f)
+                  },
+                  onDragCancel = {
+                    settleExpand(expandTarget)
+                  }
+                )
+              }
+              .clickable { settleExpand(if (expandTarget == 1f) 0f else 1f) },
+            contentAlignment = Alignment.Center
           ) {
-            // v2.2.0: a long drag bar replaces the collapse button.
-            // Drag it down to shrink the sheet, up to expand it.
-            var dragTotal by remember { mutableStateOf(0f) }
             Box(
               modifier = Modifier
-                .fillMaxWidth()
-                .height(28.dp)
-                .pointerInput(Unit) {
-                  detectVerticalDragGestures(
-                    onDragStart = { dragTotal = 0f },
-                    onVerticalDrag = { _, dragAmount ->
-                      dragTotal += dragAmount
-                      if (dragTotal > 56f && !collapsed) {
-                        collapsed = true
-                        dragTotal = 0f
-                      } else if (dragTotal < -56f && collapsed) {
-                        collapsed = false
-                        dragTotal = 0f
-                      }
-                    }
-                  )
-                }
-                .clickable { collapsed = !collapsed },
-              contentAlignment = Alignment.Center
-            ) {
+                .width(96.dp)
+                .height(5.dp)
+                .clip(RoundedCornerShape(50))
+                .background(MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.55f))
+            )
+          }
+          Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
+          ) {
+            Text(
+              text = stringResource(R.string.chooser_title),
+              style = MaterialTheme.typography.titleMedium,
+              modifier = Modifier.weight(1f)
+            )
+            Text(
+              text = stringResource(R.string.secret_mode),
+              style = MaterialTheme.typography.bodyMedium
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            HirakuToggle(
+              checked = secretOn,
+              onCheckedChange = { secretOn = it }
+            )
+          }
+          ExpandableSection(
+            fraction = expandAnim.value,
+            onFullHeight = { fullExtraPx = it }
+          ) {
+            Column(modifier = Modifier.fillMaxWidth()) {
+              Spacer(modifier = Modifier.height(10.dp))
+              // Link preview: the one solid (non-glass) area.
               Box(
                 modifier = Modifier
-                  .width(96.dp)
-                  .height(5.dp)
-                  .clip(RoundedCornerShape(50))
-                  .background(MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f))
-              )
-            }
-            Row(
-              modifier = Modifier.fillMaxWidth(),
-              verticalAlignment = Alignment.CenterVertically
-            ) {
-              Text(
-                text = stringResource(R.string.chooser_title),
-                style = MaterialTheme.typography.titleMedium,
-                modifier = Modifier.weight(1f)
-              )
-              Text(
-                text = stringResource(R.string.secret_mode),
-                style = MaterialTheme.typography.bodyMedium
-              )
-              Spacer(modifier = Modifier.width(6.dp))
-              Switch(
-                checked = secretOn,
-                onCheckedChange = { secretOn = it }
-              )
-            }
-            if (!collapsed) {
-              if (previewEnabled) {
-                Spacer(modifier = Modifier.height(8.dp))
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                  if (favicon != null) {
-                    Image(
-                      bitmap = favicon!!.asImageBitmap(),
-                      contentDescription = null,
-                      modifier = Modifier.size(32.dp)
-                    )
-                    Spacer(modifier = Modifier.width(12.dp))
-                  }
-                  Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                      text = pageTitle?.takeIf { it.isNotBlank() } ?: url,
-                      style = MaterialTheme.typography.bodyLarge,
-                      maxLines = 2,
-                      overflow = TextOverflow.Ellipsis
-                    )
+                  .fillMaxWidth()
+                  .background(
+                    MaterialTheme.colorScheme.surface,
+                    RoundedCornerShape(16.dp)
+                  )
+                  .padding(12.dp)
+              ) {
+                Column {
+                  if (previewEnabled) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                      if (favicon != null) {
+                        Image(
+                          bitmap = favicon!!.asImageBitmap(),
+                          contentDescription = null,
+                          modifier = Modifier.size(32.dp)
+                        )
+                        Spacer(modifier = Modifier.width(12.dp))
+                      }
+                      Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                          text = pageTitle?.takeIf { it.isNotBlank() } ?: url,
+                          style = MaterialTheme.typography.bodyLarge,
+                          maxLines = 2,
+                          overflow = TextOverflow.Ellipsis
+                        )
+                        Text(
+                          text = url,
+                          style = MaterialTheme.typography.bodySmall,
+                          color = MaterialTheme.colorScheme.onSurfaceVariant,
+                          maxLines = 1,
+                          overflow = TextOverflow.Ellipsis
+                        )
+                      }
+                    }
+                  } else {
                     Text(
                       text = url,
                       style = MaterialTheme.typography.bodySmall,
@@ -467,42 +582,32 @@ class LinkHandlerActivity : ComponentActivity() {
                       overflow = TextOverflow.Ellipsis
                     )
                   }
-                }
-              } else {
-                Text(
-                  text = url,
-                  style = MaterialTheme.typography.bodySmall,
-                  color = MaterialTheme.colorScheme.onSurfaceVariant,
-                  maxLines = 1,
-                  overflow = TextOverflow.Ellipsis
-                )
-              }
-              // v2.2.0: the URL safety result lives inside the sheet.
-              if (securityCheckOn) {
-                Spacer(modifier = Modifier.height(6.dp))
-                if (safetyWarnings.isEmpty()) {
-                  Text(
-                    text = "✓ " + stringResource(R.string.safety_ok),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.primary
-                  )
-                } else {
-                  Text(
-                    text = "⚠ " + stringResource(R.string.safety_warn_short),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.error
-                  )
-                  for (warning in safetyWarnings) {
-                    Text(
-                      text = "• " + stringResource(warning),
-                      style = MaterialTheme.typography.bodySmall,
-                      color = MaterialTheme.colorScheme.error
-                    )
+                  if (securityCheckOn) {
+                    Spacer(modifier = Modifier.height(6.dp))
+                    if (safetyWarnings.isEmpty()) {
+                      Text(
+                        text = "✓ " + stringResource(R.string.safety_ok),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.primary
+                      )
+                    } else {
+                      Text(
+                        text = "⚠ " + stringResource(R.string.safety_warn_short),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error
+                      )
+                      for (warning in safetyWarnings) {
+                        Text(
+                          text = "• " + stringResource(warning),
+                          style = MaterialTheme.typography.bodySmall,
+                          color = MaterialTheme.colorScheme.error
+                        )
+                      }
+                    }
                   }
                 }
               }
               if (referrerPackage != null) {
-                Spacer(modifier = Modifier.height(4.dp))
                 Row(
                   verticalAlignment = Alignment.CenterVertically,
                   modifier = Modifier
@@ -539,48 +644,55 @@ class LinkHandlerActivity : ComponentActivity() {
                   )
                 }
               }
-              Spacer(modifier = Modifier.height(8.dp))
-              methods.forEachIndexed { index, method ->
-                AnimatedVisibility(
-                  visible = index < rowsShown,
-                  enter = if (animLevel == LinkPreferences.ANIM_STRONG) {
-                    fadeIn(tween(180)) + slideInVertically(
-                      animationSpec = spring(
-                        dampingRatio = Spring.DampingRatioMediumBouncy,
-                        stiffness = Spring.StiffnessMedium
-                      ),
-                      initialOffsetY = { it / 2 }
-                    )
-                  } else {
-                    fadeIn(tween(120))
-                  }
-                ) {
-                  MethodRow(
-                    method = method,
-                    label = labels[method] ?: stringResource(method.labelRes),
-                    iconPackage = iconPackages[method],
-                    animLevel = animLevel,
-                    onClick = {
-                      if (method != OpenMethod.CANCEL && method != OpenMethod.ASK) {
-                        if (fixForApp && referrerPackage != null) {
-                          LinkPreferences.setAppRule(context, referrerPackage, method)
-                        }
-                        if (fixForSite && !host.isNullOrBlank()) {
-                          LinkPreferences.setSiteRule(context, host, method)
-                        }
-                      }
-                      if (method != OpenMethod.CANCEL && !secretOn) {
-                        HistoryStore.record(context, url, pageTitle ?: url)
-                      }
-                      LinkDispatcher.open(
-                        this@LinkHandlerActivity,
-                        url,
-                        method,
-                        secretOn
+              Spacer(modifier = Modifier.height(6.dp))
+              // Rows with a finger-following pill highlight: drag
+              // over the list, release to open with that item.
+              Box(modifier = Modifier.fillMaxWidth()) {
+                if (hoverIndex != null) {
+                  Box(
+                    modifier = Modifier
+                      .offset(y = rowHeight * pillAnim.value)
+                      .fillMaxWidth()
+                      .height(rowHeight)
+                      .padding(horizontal = 4.dp, vertical = 3.dp)
+                      .clip(RoundedCornerShape(16.dp))
+                      .background(
+                        MaterialTheme.colorScheme.primary.copy(alpha = 0.18f)
                       )
-                      finish()
-                    }
                   )
+                }
+                Column(
+                  modifier = Modifier
+                    .fillMaxWidth()
+                    .pointerInput(items.size) {
+                      var startY = 0f
+                      var totalDrag = 0f
+                      detectVerticalDragGestures(
+                        onDragStart = { offset ->
+                          startY = offset.y
+                          totalDrag = 0f
+                          hoverIndex = (offset.y / rowHeightPx).toInt()
+                            .coerceIn(0, items.lastIndex)
+                        },
+                        onVerticalDrag = { _, dragAmount ->
+                          totalDrag += dragAmount
+                          hoverIndex = ((startY + totalDrag) / rowHeightPx).toInt()
+                            .coerceIn(0, items.lastIndex)
+                        },
+                        onDragEnd = {
+                          val index = hoverIndex
+                          hoverIndex = null
+                          if (index != null && index in items.indices) {
+                            choose(items[index])
+                          }
+                        },
+                        onDragCancel = { hoverIndex = null }
+                      )
+                    }
+                ) {
+                  items.forEach { item ->
+                    ChooserRow(item = item, onClick = { choose(item) })
+                  }
                 }
               }
             }
@@ -591,62 +703,101 @@ class LinkHandlerActivity : ComponentActivity() {
   }
 
   @Composable
-  private fun MethodRow(
-    method: OpenMethod,
-    label: String,
-    iconPackage: String?,
-    animLevel: Int,
-    onClick: () -> Unit
-  ) {
+  private fun ChooserRow(item: ChooserItem, onClick: () -> Unit) {
     val context = LocalContext.current
-    val iconBitmap = remember(iconPackage) {
-      if (iconPackage == null) {
-        null
-      } else {
-        try {
-          val drawable = context.packageManager.getApplicationIcon(iconPackage)
-          val w = drawable.intrinsicWidth.coerceAtLeast(1)
-          val h = drawable.intrinsicHeight.coerceAtLeast(1)
-          val bitmap = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
-          val canvas = android.graphics.Canvas(bitmap)
-          drawable.setBounds(0, 0, w, h)
-          drawable.draw(canvas)
-          bitmap.asImageBitmap()
-        } catch (_: Exception) {
-          null
-        }
-      }
-    }
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
+    val animLevel = remember { LinkPreferences.getAnimLevel(context) }
     Row(
       modifier = Modifier
         .fillMaxWidth()
+        .height(54.dp)
         .scale(if (pressed && animLevel != LinkPreferences.ANIM_OFF) 0.97f else 1f)
         .clickable(
           interactionSource = interaction,
           indication = null,
           onClick = onClick
         )
-        .padding(vertical = 10.dp),
+        .padding(horizontal = 14.dp),
       verticalAlignment = Alignment.CenterVertically
     ) {
-      if (iconBitmap != null) {
-        Image(
-          bitmap = iconBitmap,
-          contentDescription = null,
-          modifier = Modifier
-            .size(30.dp)
-            .clip(RoundedCornerShape(8.dp))
-        )
-      } else {
-        MethodGlyph(method)
+      when (item) {
+        is ChooserItem.MethodItem -> {
+          val method = item.method
+          val icon = rememberAppIcon(method.iconPackage(context))
+          if (icon != null) {
+            Image(
+              bitmap = icon,
+              contentDescription = null,
+              modifier = Modifier
+                .size(30.dp)
+                .clip(RoundedCornerShape(8.dp))
+            )
+          } else {
+            MethodGlyph(method)
+          }
+          Spacer(modifier = Modifier.width(14.dp))
+          Text(
+            text = method.displayLabel(context),
+            style = MaterialTheme.typography.bodyLarge,
+            color = if (method == OpenMethod.CANCEL) {
+              Color(0xFFFF453A)
+            } else {
+              Color.Unspecified
+            }
+          )
+        }
+        is ChooserItem.ShareItem -> {
+          val icon = rememberAppIcon(item.packageName)
+          if (icon != null) {
+            Image(
+              bitmap = icon,
+              contentDescription = null,
+              modifier = Modifier
+                .size(30.dp)
+                .clip(RoundedCornerShape(8.dp))
+            )
+          } else {
+            MethodGlyph(OpenMethod.SHARE)
+          }
+          Spacer(modifier = Modifier.width(14.dp))
+          Text(
+            text = appLabel(context, item.packageName),
+            style = MaterialTheme.typography.bodyLarge
+          )
+        }
       }
-      Spacer(modifier = Modifier.width(14.dp))
-      Text(
-        text = label,
-        style = MaterialTheme.typography.bodyLarge
-      )
+    }
+  }
+
+  /**
+   * A section whose visible height is [fraction] of its full
+   * height, for the chooser's continuous expand / collapse.
+   */
+  @Composable
+  private fun ExpandableSection(
+    fraction: Float,
+    onFullHeight: (Int) -> Unit,
+    content: @Composable () -> Unit
+  ) {
+    Box(
+      modifier = Modifier
+        .fillMaxWidth()
+        .layout { measurable, constraints ->
+          val placeable = measurable.measure(
+            constraints.copy(maxHeight = Constraints.Infinity)
+          )
+          onFullHeight(placeable.height)
+          val visible = (placeable.height * fraction)
+            .roundToInt()
+            .coerceAtLeast(0)
+          layout(placeable.width, visible) {
+            placeable.placeRelative(0, 0)
+          }
+        }
+        .clipToBounds()
+    ) {
+      content()
     }
   }
 
@@ -696,7 +847,7 @@ class LinkHandlerActivity : ComponentActivity() {
         OpenMethod.CANCEL -> Icon(
           imageVector = Icons.Filled.Close,
           contentDescription = null,
-          tint = tint,
+          tint = Color(0xFFFF453A),
           modifier = Modifier.size(18.dp)
         )
         else -> Text(
