@@ -13,8 +13,8 @@ android {
     applicationId = "com.kabukabu.hiraku"
     minSdk = 28
     targetSdk = 34
-    versionCode = 240
-    versionName = "2.3.10"
+    versionCode = 241
+    versionName = "2.3.11"
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     vectorDrawables {

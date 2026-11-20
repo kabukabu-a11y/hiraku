@@ -23,6 +23,7 @@ package arun.com.chromer.ui
 import android.app.Activity
 import android.content.Context
 import android.content.Intent
+import android.view.ViewGroup
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.AnimationSpec
 import androidx.compose.animation.core.snap
@@ -58,7 +59,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
-import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -71,6 +71,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.viewinterop.AndroidView
+import com.qmdeve.liquidglass.widget.LiquidGlassView
 import arun.com.chromer.R
 import arun.com.chromer.customtab.LinkPreferences
 import arun.com.chromer.home.HomeActivity
@@ -143,22 +145,22 @@ fun HirakuBottomBar(
   // HomeActivity's layered setup); this composition then draws
   // only the shadow, the pill and the items.
   externalGlass: Boolean = false,
-  // v2.3.9 (item 96): reports the indicator's position (in
-  // tab units) on every frame it changes, so the layered
-  // setup can slide a second liquid-glass view under the
-  // pill and the refraction follows the pill's travel.
-  onPillPosition: ((Float) -> Unit)? = null
+  // v2.3.11 (item 103): when non-null (the layered setup in
+  // HomeActivity), the pill IS a real LiquidGlassView placed
+  // inside this composition, sampling this view group. The
+  // pill box's own offset and graphicsLayer scale drive it,
+  // so the refraction, the press growth and the velocity
+  // squash are one element — the v2.3.9 design (a separate
+  // glass view in the activity, slid via a position
+  // callback) lagged behind the pill on fast travel and did
+  // not grow on press, exactly as the user reported.
+  pillGlassSource: ViewGroup? = null
 ) {
   val context = LocalContext.current
   val animLevel = remember { LinkPreferences.getAnimLevel(context) }
   val glassOn = glassEnabled()
   val scope = rememberCoroutineScope()
   val position = remember { Animatable(selectedIndex.toFloat()) }
-  if (onPillPosition != null) {
-    LaunchedEffect(onPillPosition) {
-      snapshotFlow { position.value }.collect { onPillPosition(it) }
-    }
-  }
   val pressProgress = remember { Animatable(0f) }
   val scaleX = remember { Animatable(1f) }
   val scaleY = remember { Animatable(1f) }
@@ -315,7 +317,7 @@ fun HirakuBottomBar(
             this.scaleY = scaleY.value * (1f - termY)
           }
           .then(
-            if (glassOn) {
+            if (glassOn && pillGlassSource == null) {
               Modifier
                 .background(
                   // v2.3.5 (item 90): a single flat fill, and
@@ -337,7 +339,26 @@ fun HirakuBottomBar(
               )
             }
           )
-      )
+      ) {
+        if (glassOn && pillGlassSource != null) {
+          AndroidView(
+            factory = { ctx ->
+              LiquidGlassView(ctx).apply {
+                setCornerRadius(27 * ctx.resources.displayMetrics.density)
+                setTintColorRed(1f)
+                setTintColorGreen(1f)
+                setTintColorBlue(1f)
+                setTintAlpha(0.10f)
+                setBlurRadius(24f)
+                isClickable = false
+                isFocusable = false
+                post { bind(pillGlassSource) }
+              }
+            },
+            modifier = Modifier.fillMaxSize()
+          )
+        }
+      }
 
       Row(modifier = Modifier.fillMaxSize()) {
         HirakuTabLabels.forEachIndexed { index, labelRes ->

@@ -26,6 +26,10 @@ After installing, set Hiraku as your default browser so links from other apps ar
 - **URL security check (v2.1.0)**: warns before opening suspicious links (IP-address hosts, punycode domains, URLs with embedded user info). Can be turned off.
 - **And more**: article mode, tabs & history, desktop site toggle, a dedicated settings screen, and a Japanese / English UI (Settings → Language).
 
+## What's new in v2.3.11
+
+- **The main bar's pill and its glass are now one element**: in v2.3.10 the pill's refraction lived on a separate glass view slid along by a position callback — it lagged behind the pill at high speed and did not grow when you pressed and held. The glass now sits inside the bar as the pill itself, driven by the pill's own animation: movement, press growth and velocity squash all apply to the glass directly, with nothing left to drift apart.
+
 ## What's new in v2.3.10
 
 Includes everything from v2.3.9 below (its build failed on a one-line typo; fixed here), plus:
@@ -159,6 +163,10 @@ The ad-blocking list is built from the public [pgl.yoyo.org adservers](https://p
 - **共有先アプリを選択画面に（v2.3.0）**：クイック共有は廃止し、共有を受け付けるアプリが選択画面に「開き方」として直接並ぶようになりました（設定で追加・削除できます）
 - **URLセキュリティチェック（v2.1.0）**：IPアドレスへのリンク、国際化ドメイン（xn--）、ユーザー情報を含むURLなど、怪しいリンクを開く前に警告します（OFFにもできます）
 - **その他**：記事モード、タブと履歴、デスクトップサイト切替、細かい設定を集約した設定画面、日本語／英語の表示切替（設定 → 言語）
+
+## v2.3.11の新機能
+
+- **メインバーのピルとガラスを一体化**：v2.3.10ではピルの屈折が別ビューのガラスにあり、位置を後から追いかけさせる方式だったため、速く動かすとズレて、長押しでピルが大きくなってもガラスは付いてきませんでした。ガラスをバーの中に入れてピルそのものにしたので、移動・押し込みの拡大・速度スカッシュの全部がガラスに直接かかります。ズレる相手がもういません
 
 ## v2.3.10の新機能
 
