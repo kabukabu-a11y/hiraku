@@ -367,9 +367,26 @@ class OverlayService : Service() {
             titleView?.text = title
           }
         }
+
+        override fun onReceivedIcon(view: WebView?, icon: Bitmap?) {
+          if (icon != null) {
+            faviconView?.setImageBitmap(icon)
+          }
+        }
       }
     }
 
+    wv.setDownloadListener { downloadUrl, userAgent, contentDisposition, mimeType, _ ->
+      if (!downloadUrl.isNullOrBlank()) {
+        LinkDispatcher.handleDownload(
+          this@OverlayService,
+          downloadUrl,
+          userAgent,
+          contentDisposition,
+          mimeType
+        )
+      }
+    }
 
     val barOnTop = LinkPreferences.isBarOnTop(this)
     if (barOnTop) {
@@ -657,6 +674,62 @@ class OverlayService : Service() {
       grip.bringToFront()
     }
 
+    // v2.3.0: a subtle move handle pill overlapping the page at
+    // the edge opposite the bar (no dedicated band). Dragging it
+    // moves the window, like dragging the bar's top row.
+    val moveHandle = View(this).apply {
+      background = GradientDrawable().apply {
+        shape = GradientDrawable.RECTANGLE
+        cornerRadius = dp(3).toFloat()
+        setColor(0x59FFFFFF)
+      }
+      layoutParams = FrameLayout.LayoutParams(dp(40), dp(5)).apply {
+        gravity = (if (barOnTop) Gravity.BOTTOM else Gravity.TOP) or
+          Gravity.CENTER_HORIZONTAL
+        if (barOnTop) {
+          bottomMargin = dp(4)
+        } else {
+          topMargin = dp(4)
+        }
+      }
+    }
+    root.addView(moveHandle)
+    var handleStartX = 0
+    var handleStartY = 0
+    var handleRawX = 0f
+    var handleRawY = 0f
+    moveHandle.setOnTouchListener { v, event ->
+      val wm = windowManager ?: return@setOnTouchListener false
+      val r = rootView ?: return@setOnTouchListener false
+      val p = layoutParams ?: return@setOnTouchListener false
+      when (event.actionMasked) {
+        MotionEvent.ACTION_DOWN -> {
+          handleStartX = p.x
+          handleStartY = p.y
+          handleRawX = event.rawX
+          handleRawY = event.rawY
+          true
+        }
+        MotionEvent.ACTION_MOVE -> {
+          val maxX = (screenWidth - p.width).coerceAtLeast(0)
+          val maxY = (screenHeight - p.height).coerceAtLeast(0)
+          p.x = (handleStartX + (event.rawX - handleRawX).toInt()).coerceIn(0, maxX)
+          p.y = (handleStartY + (event.rawY - handleRawY).toInt()).coerceIn(0, maxY)
+          try {
+            wm.updateViewLayout(r, p)
+          } catch (_: Exception) {
+          }
+          true
+        }
+        MotionEvent.ACTION_UP -> {
+          saveGeometry()
+          v.performClick()
+          true
+        }
+        else -> false
+      }
+    }
+    moveHandle.bringToFront()
 
     root.setOnKeyListener { _, keyCode, event ->
       if (keyCode == KeyEvent.KEYCODE_BACK && event.action == KeyEvent.ACTION_UP) {
