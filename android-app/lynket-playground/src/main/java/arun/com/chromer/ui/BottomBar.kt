@@ -58,6 +58,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -121,6 +122,7 @@ fun HirakuBottomBar(
 ) {
   val context = LocalContext.current
   val animLevel = remember { LinkPreferences.getAnimLevel(context) }
+  val scope = rememberCoroutineScope()
   val fast = remember { Animatable(selectedIndex.toFloat()) }
   val slow = remember { Animatable(selectedIndex.toFloat()) }
   var dragging by remember { mutableStateOf(false) }
@@ -281,26 +283,35 @@ fun HirakuBottomBar(
                 if (isDrag) {
                   val target = (change.position.x / itemWidthPx - 0.5f)
                     .coerceIn(0f, HirakuTabLabels.lastIndex.toFloat())
-                  fast.snapTo(target)
-                  // Trailing edge: low-pass follow, so the pill
-                  // stretches only a little while travelling.
-                  slow.snapTo(slow.value + (target - slow.value) * 0.38f)
+                  // AwaitPointerEventScope is a restricted
+                  // suspension scope: Animatable calls must run in
+                  // a real coroutine, not in the gesture block.
+                  scope.launch {
+                    fast.snapTo(target)
+                    // Trailing edge: low-pass follow, so the pill
+                    // stretches only a little while travelling.
+                    slow.snapTo(slow.value + (target - slow.value) * 0.38f)
+                  }
                 }
               }
               if (!released) {
                 // Gesture cancelled: settle back.
                 dragging = false
-                fast.animateTo(
-                  selectedIndex.toFloat(),
-                  spring(dampingRatio = 0.82f, stiffness = Spring.StiffnessMedium)
-                )
-                slow.animateTo(
-                  selectedIndex.toFloat(),
-                  spring(
-                    dampingRatio = Spring.DampingRatioNoBouncy,
-                    stiffness = Spring.StiffnessMediumLow
+                scope.launch {
+                  fast.animateTo(
+                    selectedIndex.toFloat(),
+                    spring(dampingRatio = 0.82f, stiffness = Spring.StiffnessMedium)
                   )
-                )
+                }
+                scope.launch {
+                  slow.animateTo(
+                    selectedIndex.toFloat(),
+                    spring(
+                      dampingRatio = Spring.DampingRatioNoBouncy,
+                      stiffness = Spring.StiffnessMediumLow
+                    )
+                  )
+                }
               } else if (!isDrag) {
                 val index = (startX / itemWidthPx).toInt()
                   .coerceIn(0, HirakuTabLabels.lastIndex)
@@ -314,17 +325,21 @@ fun HirakuBottomBar(
                 if (target != selectedIndex) {
                   onSelect(target)
                 } else {
-                  fast.animateTo(
-                    selectedIndex.toFloat(),
-                    spring(dampingRatio = 0.82f, stiffness = Spring.StiffnessMedium)
-                  )
-                  slow.animateTo(
-                    selectedIndex.toFloat(),
-                    spring(
-                      dampingRatio = Spring.DampingRatioNoBouncy,
-                      stiffness = Spring.StiffnessMediumLow
+                  scope.launch {
+                    fast.animateTo(
+                      selectedIndex.toFloat(),
+                      spring(dampingRatio = 0.82f, stiffness = Spring.StiffnessMedium)
                     )
-                  )
+                  }
+                  scope.launch {
+                    slow.animateTo(
+                      selectedIndex.toFloat(),
+                      spring(
+                        dampingRatio = Spring.DampingRatioNoBouncy,
+                        stiffness = Spring.StiffnessMediumLow
+                      )
+                    )
+                  }
                 }
               }
             }
