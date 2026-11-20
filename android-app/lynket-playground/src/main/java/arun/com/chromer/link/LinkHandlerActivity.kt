@@ -483,7 +483,7 @@ class LinkHandlerActivity : ComponentActivity() {
           LinkPreferences.ANIM_WEAK -> fadeIn(tween(150))
           else -> slideInVertically(
             // Glasmio's sheet spring (1, 300) (v2.3.2 item 78c).
-            animationSpec = IosMotion.SHEET,
+            animationSpec = IosMotion.SHEET_OFFSET,
             initialOffsetY = { it }
           ) + fadeIn(tween(200))
         },
@@ -494,7 +494,7 @@ class LinkHandlerActivity : ComponentActivity() {
           LinkPreferences.ANIM_OFF -> ExitTransition.None
           LinkPreferences.ANIM_WEAK -> fadeOut(tween(120))
           else -> slideOutVertically(
-            animationSpec = IosMotion.SHEET,
+            animationSpec = IosMotion.SHEET_OFFSET,
             targetOffsetY = { it }
           ) + fadeOut(tween(160))
         },

@@ -26,6 +26,7 @@ import android.graphics.Canvas
 import android.view.animation.Interpolator
 import android.view.animation.PathInterpolator
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.AnimationSpec
 import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateDpAsState
@@ -80,6 +81,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
@@ -173,6 +175,11 @@ object IosMotion {
   /** Sheet spring (GlasmioSheetDefaults): damping 1, stiffness 300. */
   const val SHEET_DAMPING = 1f
   const val SHEET_STIFFNESS = 300f
+
+  /** Ready-made sheet specs: Float values and IntOffset slides. */
+  val SHEET: AnimationSpec<Float> = spring(SHEET_DAMPING, SHEET_STIFFNESS)
+  val SHEET_OFFSET: AnimationSpec<IntOffset> =
+    spring(SHEET_DAMPING, SHEET_STIFFNESS)
 
   /** Velocity squash cap of the tab indicator layer: ±0.2 (GlassBottomBar). */
   const val VELOCITY_SQUASH_CAP = 0.2f
