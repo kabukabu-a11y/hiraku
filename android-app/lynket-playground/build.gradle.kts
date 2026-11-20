@@ -114,6 +114,12 @@ dependencies {
   // Dagger
   implementation(libs.dagger)
   kapt(libs.dagger.compiler)
+  // Kotlin 2.4 writes @Metadata version 2.4.0, but the
+  // kotlin-metadata-jvm reader that ends up on the kapt classpath
+  // tops out at 2.2.0 and kills kaptReleaseKotlin with
+  // "Provided Metadata instance has version 2.4.0, while maximum
+  // supported version is 2.2.0". Pin the reader to the 2.4 line.
+  kapt("org.jetbrains.kotlin:kotlin-metadata-jvm:2.4.21")
 
   testImplementation(libs.junit)
 
