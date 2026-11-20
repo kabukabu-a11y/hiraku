@@ -85,6 +85,15 @@ tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach 
   compilerOptions {
     languageVersion.set(org.jetbrains.kotlin.gradle.dsl.KotlinVersion.KOTLIN_2_4)
     apiVersion.set(org.jetbrains.kotlin.gradle.dsl.KotlinVersion.KOTLIN_2_4)
+    // Dagger's compiler reads Kotlin @Metadata through a copy of
+    // Room's XProcessing shaded inside dagger-compiler, whose
+    // kotlin-metadata reader tops out at metadata 2.2.0 and kills
+    // kapt ("Provided Metadata instance has version 2.4.0, while
+    // maximum supported version is 2.2.0"). The shaded reader
+    // cannot be upgraded from the classpath, so emit this
+    // module's own metadata at 2.2.0 instead. Library metadata
+    // (Compose/Glasmio, read by the compiler itself) is unaffected.
+    freeCompilerArgs.add("-Xmetadata-version=2.2.0")
   }
 }
 
