@@ -571,14 +571,19 @@ class LinkHandlerActivity : ComponentActivity() {
           ) {
             Column(modifier = Modifier.fillMaxWidth()) {
               Spacer(modifier = Modifier.height(10.dp))
-              // Link preview: the one solid (non-glass) area.
+              // Link preview card: glass like the rest of the
+              // sheet (v2.3.3 item 83). It used to be the one
+              // solid area — a flat Material surface that stayed
+              // pitch black in dark mode while everything around
+              // it was glass, with its title inheriting a dark
+              // theme color that was unreadable on it. The text
+              // below now names the glass content colors
+              // explicitly; the security line keeps its
+              // primary/error colors.
               Box(
                 modifier = Modifier
                   .fillMaxWidth()
-                  .background(
-                    MaterialTheme.colorScheme.surface,
-                    RoundedCornerShape(16.dp)
-                  )
+                  .glassBackground(RoundedCornerShape(16.dp))
                   .padding(12.dp)
               ) {
                 Column {
@@ -596,13 +601,14 @@ class LinkHandlerActivity : ComponentActivity() {
                         Text(
                           text = pageTitle?.takeIf { it.isNotBlank() } ?: url,
                           style = MaterialTheme.typography.bodyLarge,
+                          color = GlassContent,
                           maxLines = 2,
                           overflow = TextOverflow.Ellipsis
                         )
                         Text(
                           text = url,
                           style = MaterialTheme.typography.bodySmall,
-                          color = MaterialTheme.colorScheme.onSurfaceVariant,
+                          color = GlassContentSecondary,
                           maxLines = 1,
                           overflow = TextOverflow.Ellipsis
                         )
@@ -612,7 +618,7 @@ class LinkHandlerActivity : ComponentActivity() {
                     Text(
                       text = url,
                       style = MaterialTheme.typography.bodySmall,
-                      color = MaterialTheme.colorScheme.onSurfaceVariant,
+                      color = GlassContentSecondary,
                       maxLines = 1,
                       overflow = TextOverflow.Ellipsis
                     )
