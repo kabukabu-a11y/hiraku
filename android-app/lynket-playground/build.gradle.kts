@@ -98,7 +98,7 @@ dependencies {
   // library AndroidLiquidGlassView (MIT). Java bytecode, so it
   // does not hit the Kotlin-metadata wall that blocks Glasmio /
   // Kyant backdrop on this project's Kotlin 1.9 toolchain.
-  implementation("com.qmdeve.liquidglass:core:1.1.0")
+  implementation("com.qmdeve.liquidglass:core:1.0.3")
 
   // Dagger
   implementation(libs.dagger)
