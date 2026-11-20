@@ -647,6 +647,35 @@ object LinkPreferences {
     prefs(context).edit().putBoolean(KEY_GLASS_ENABLED, enabled).apply()
   }
 
+  // ----- v2.3.1: glass strength -----
+
+  private const val KEY_GLASS_STRENGTH = "glass_strength"
+  const val GLASS_WEAK = 0
+  const val GLASS_MEDIUM = 1
+  const val GLASS_STRONG = 2
+
+  /**
+   * How strong the Liquid Glass material reads: backdrop blur
+   * radius, tint density and edge highlight. The medium default is
+   * deliberately stronger than the v2.3.0 glass.
+   */
+  fun getGlassStrength(context: Context): Int {
+    return prefs(context).getInt(KEY_GLASS_STRENGTH, GLASS_MEDIUM)
+  }
+
+  fun setGlassStrength(context: Context, strength: Int) {
+    prefs(context).edit().putInt(KEY_GLASS_STRENGTH, strength.coerceIn(0, 2)).apply()
+  }
+
+  /** Backdrop blur radius (dp) for overlay windows at a strength. */
+  fun glassBlurRadiusDp(strength: Int): Int {
+    return when (strength) {
+      GLASS_WEAK -> 20
+      GLASS_STRONG -> 84
+      else -> 52
+    }
+  }
+
   /** Match the app colors to the device theme colors (Android 12+). */
   fun isDynamicColor(context: Context): Boolean {
     return prefs(context).getBoolean(KEY_DYNAMIC_COLOR, true)

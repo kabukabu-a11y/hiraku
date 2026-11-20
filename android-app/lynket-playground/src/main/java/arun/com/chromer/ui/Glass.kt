@@ -23,7 +23,10 @@ package arun.com.chromer.ui
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.Canvas
+import android.view.animation.Interpolator
+import android.view.animation.PathInterpolator
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.snap
@@ -100,50 +103,119 @@ val ToggleOnYellow = Color(0xFFFFD60A)
 
 private val CheckBlue = Color(0xFF0A84FF)
 
+/**
+ * OCC motion curve (ColorOS-style, v2.3.1 item 66): a fast attack
+ * with a long, gentle settle. Used for Compose animations; the
+ * View-based windows use [occInterpolator] with the same control
+ * points.
+ */
+val OccEasing = CubicBezierEasing(0.25f, 0.1f, 0.25f, 1f)
+
+/** The same OCC curve as a platform interpolator. */
+fun occInterpolator(): Interpolator = PathInterpolator(0.25f, 0.1f, 0.25f, 1f)
+
+/**
+ * The one Liquid Glass tint (v2.3.1 item 67): the glass material
+ * keeps this exact color in light and dark mode alike — only the
+ * strength setting changes how present it is. Content drawn on
+ * glass uses the fixed light palette below so it stays readable
+ * on the glass in either theme.
+ */
+private val GlassTintBase = Color(0xFF1B1B22)
+
+/** Primary content color on glass surfaces (theme-independent). */
+val GlassContent = Color(0xFFF5F5F7)
+
+/** Secondary content color on glass surfaces (theme-independent). */
+val GlassContentSecondary = Color(0xFFC6C6CF)
+
+/** How present the glass material is at each strength level. */
+private data class GlassParams(
+  val tintAlpha: Float,
+  val sheenAlpha: Float,
+  val borderTopAlpha: Float
+)
+
+private fun glassParams(strength: Int): GlassParams {
+  return when (strength) {
+    LinkPreferences.GLASS_WEAK -> GlassParams(0.52f, 0.05f, 0.38f)
+    LinkPreferences.GLASS_STRONG -> GlassParams(0.90f, 0.17f, 0.85f)
+    // Medium (default) is deliberately stronger than the v2.3.0
+    // glass (item 65): denser tint, a visible sheen and a brighter
+    // light-catching edge.
+    else -> GlassParams(0.76f, 0.11f, 0.62f)
+  }
+}
+
 @Composable
 fun glassEnabled(): Boolean {
   val context = LocalContext.current
   return remember { LinkPreferences.isGlassEnabled(context) }
 }
 
+@Composable
+fun glassStrength(): Int {
+  val context = LocalContext.current
+  return remember { LinkPreferences.getGlassStrength(context) }
+}
+
 /**
- * Glass surface: translucent fill plus a vertical gradient border
- * that catches light at the top edge. Falls back to the solid
- * Material surface when glass is disabled.
+ * Glass surface: translucent fill, a specular sheen across the top
+ * and a gradient border that catches light at the top edge. The
+ * tint color does not change between light and dark mode (item
+ * 67). Falls back to the solid Material surface when glass is
+ * disabled.
  */
 @Composable
 fun Modifier.glassBackground(
   shape: Shape,
   enabled: Boolean = glassEnabled(),
   dark: Boolean = isSystemInDarkTheme(),
-  tint: Color? = null
+  tint: Color? = null,
+  strength: Int = glassStrength()
 ): Modifier {
   if (!enabled) {
     return this.background(MaterialTheme.colorScheme.surface, shape)
   }
-  val base = tint ?: if (dark) {
-    Color(0xFF17171D).copy(alpha = 0.68f)
-  } else {
-    Color(0xFFF5F5FA).copy(alpha = 0.66f)
-  }
+  val params = glassParams(strength)
+  val base = tint ?: GlassTintBase.copy(alpha = params.tintAlpha)
+  val sheen = Brush.verticalGradient(
+    listOf(
+      Color.White.copy(alpha = params.sheenAlpha),
+      Color.White.copy(alpha = 0f)
+    )
+  )
   val borderBrush = Brush.verticalGradient(
     listOf(
-      Color.White.copy(alpha = if (dark) 0.42f else 0.7f),
+      Color.White.copy(alpha = params.borderTopAlpha),
       Color.White.copy(alpha = 0.10f)
     )
   )
   return this
     .background(base, shape)
+    .background(sheen, shape)
     .border(1.dp, borderBrush, shape)
 }
 
-/** Solid color to paint glass in the View-based overlay windows. */
-fun glassViewColor(dark: Boolean, glassOn: Boolean): Int {
-  return if (glassOn) {
-    if (dark) 0xD91B1B21.toInt() else 0xD9F2F2F7.toInt()
-  } else {
-    if (dark) 0xFF202124.toInt() else 0xFFF2F2F7.toInt()
+/**
+ * Solid color to paint glass in the View-based overlay windows.
+ * Same rule as the Compose glass: one tint for light and dark
+ * (item 67); [dark] only picks the non-glass fallback.
+ */
+fun glassViewColor(
+  dark: Boolean,
+  glassOn: Boolean,
+  strength: Int = LinkPreferences.GLASS_MEDIUM
+): Int {
+  if (!glassOn) {
+    return if (dark) 0xFF202124.toInt() else 0xFFF2F2F7.toInt()
   }
+  val alpha = when (strength) {
+    LinkPreferences.GLASS_WEAK -> 0xB4
+    LinkPreferences.GLASS_STRONG -> 0xF2
+    else -> 0xE0
+  }
+  return (alpha shl 24) or 0x1B1B22
 }
 
 /**
@@ -231,9 +303,11 @@ fun GlassSelectPopup(
     targetValue = PopupRowHeight * displayIndex + 4.dp,
     animationSpec = when (animLevel) {
       LinkPreferences.ANIM_OFF -> tween(durationMillis = 1)
-      LinkPreferences.ANIM_WEAK -> tween(durationMillis = 140)
+      LinkPreferences.ANIM_WEAK -> tween(durationMillis = 140, easing = OccEasing)
+      // No overshoot: unlike the bottom bar's liquid, this pill
+      // must stay inside the popup frame at all times (item 63).
       else -> spring(
-        dampingRatio = Spring.DampingRatioMediumBouncy,
+        dampingRatio = Spring.DampingRatioNoBouncy,
         stiffness = Spring.StiffnessMediumLow
       )
     },
@@ -264,6 +338,9 @@ fun GlassSelectPopup(
         Box(
           modifier = Modifier
             .width(300.dp)
+            // Clip everything (above all the sliding pill) to the
+            // popup's rounded frame (item 63).
+            .clip(shape)
             .glassBackground(
               shape = shape,
               enabled = true,
@@ -411,7 +488,7 @@ fun GlassTabSwitch(
             color = if (index == selectedIndex) {
               MaterialTheme.colorScheme.onPrimary
             } else {
-              MaterialTheme.colorScheme.onSurfaceVariant
+              GlassContentSecondary
             },
             style = MaterialTheme.typography.labelLarge
           )
