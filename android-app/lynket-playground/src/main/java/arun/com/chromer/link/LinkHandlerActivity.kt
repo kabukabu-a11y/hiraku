@@ -149,6 +149,10 @@ class LinkHandlerActivity : ComponentActivity() {
   private var chooserPreDraw: ViewTreeObserver.OnPreDrawListener? = null
   private var chooserGlassRect: android.graphics.Rect? = null
   private var chooserGlassActive = false
+  // v2.3.15 (item 111): the glass pill's size is locked for
+  // the length of a drag; only its translation moves.
+  private var chooserGlassLockW = -1
+  private var chooserGlassLockH = -1
 
   /**
    * Positions the chooser's glass pill from the placeholder's
@@ -160,18 +164,34 @@ class LinkHandlerActivity : ComponentActivity() {
     val rect = chooserGlassRect
     if (!chooserGlassActive || rect == null) {
       if (glass.visibility != View.GONE) glass.visibility = View.GONE
+      chooserGlassLockW = -1
+      chooserGlassLockH = -1
       return
+    }
+    // v2.3.15 (item 111): on-device the pill wobbled and
+    // smeared. Two causes: the placeholder's size changes
+    // every frame while its two spring edges travel, and
+    // resizing a LiquidGlassView makes it re-layout and
+    // re-record constantly. The glass now locks its size
+    // when a drag starts (rows are uniform, so the resting
+    // size is the right size) and from then on only its
+    // translation follows the placeholder's center — no
+    // relayout, no re-record churn.
+    if (chooserGlassLockW < 0) {
+      chooserGlassLockW = rect.width()
+      chooserGlassLockH = rect.height()
+      val lp = glass.layoutParams as FrameLayout.LayoutParams
+      if (lp.width != chooserGlassLockW || lp.height != chooserGlassLockH) {
+        lp.width = chooserGlassLockW
+        lp.height = chooserGlassLockH
+        glass.layoutParams = lp
+      }
     }
     val rootLoc = IntArray(2)
     root.getLocationInWindow(rootLoc)
-    val lp = glass.layoutParams as FrameLayout.LayoutParams
-    if (lp.width != rect.width() || lp.height != rect.height()) {
-      lp.width = rect.width()
-      lp.height = rect.height()
-      glass.layoutParams = lp
-    }
     glass.translationX = (rect.left - rootLoc[0]).toFloat()
-    glass.translationY = (rect.top - rootLoc[1]).toFloat()
+    glass.translationY =
+      (rect.centerY() - chooserGlassLockH / 2 - rootLoc[1]).toFloat()
     if (glass.visibility != View.VISIBLE) glass.visibility = View.VISIBLE
   }
 
@@ -260,17 +280,18 @@ class LinkHandlerActivity : ComponentActivity() {
           setTintColorRed(1f)
           setTintColorGreen(1f)
           setTintColorBlue(1f)
-          setTintAlpha(0.10f)
-          // v2.3.13 (item 106): gentler tuning for a small
-          // capsule. The library defaults (refraction offset
-          // -70dp, dispersion 0.5, and this call's old blur
-          // 24) smeared the row icon into a rainbow streak
-          // and washed the label out while holding a drag.
+          setTintAlpha(0.13f)
+          // v2.3.15 (item 111): this pill exists only while
+          // the finger is dragging, and any refraction or
+          // dispersion samples the rows mid-motion — the
+          // icon smears into a rainbow streak no matter how
+          // the values are tuned (v2.3.13 item 106 tried).
+          // While tracking, the pill is a plain frosted
+          // capsule: blur + tint only, nothing to smear.
           setBlurRadius(8f)
-          val density = resources.displayMetrics.density
-          setRefractionHeight(12 * density)
-          setRefractionOffset(-18 * density)
-          setDispersion(0.15f)
+          setRefractionHeight(0f)
+          setRefractionOffset(0f)
+          setDispersion(0f)
         }
         root.addView(composeView)
         root.addView(glass)

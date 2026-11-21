@@ -26,6 +26,10 @@ After installing, set Hiraku as your default browser so links from other apps ar
 - **URL security check (v2.1.0)**: warns before opening suspicious links (IP-address hosts, punycode domains, URLs with embedded user info). Can be turned off.
 - **And more**: article mode, tabs & history, desktop site toggle, a dedicated settings screen, and a Japanese / English UI (Settings → Language).
 
+## What's new in v2.3.15
+
+- **The chooser's finger-follow pill is stable now**: on device it wobbled and the row icon smeared into a rainbow streak while dragging. Two causes: the pill's glass was being resized every frame (its spring edges change its height while travelling), forcing the glass view to re-layout and re-record constantly; and any refraction/dispersion samples the rows mid-motion, which smears no matter how gently it is tuned. The glass now locks its size when a drag starts and only slides (translation), and while tracking it is a plain frosted capsule — blur and tint only, nothing left to smear.
+
 ## What's new in v2.3.14
 
 - **The overlay browser's bar is now Safari-style**: the old two-row bar (title row + seven-icon row) is replaced by a single floating row — a full-round pill in the middle (back, site icon, page title, reload) flanked by round buttons for close, expand and menu. Dragging the pill moves the window, as the title row did before. The to-bubble action and the ad-block chip moved into the menu; the menu's ad-block row now shows the blocked count. The liquid glass behind the bar is unchanged and still reaches the window's edge. (Design ported clean-room from the Safari bottom-bar pattern; no code copied.)
@@ -180,6 +184,10 @@ The ad-blocking list is built from the public [pgl.yoyo.org adservers](https://p
 - **共有先アプリを選択画面に（v2.3.0）**：クイック共有は廃止し、共有を受け付けるアプリが選択画面に「開き方」として直接並ぶようになりました（設定で追加・削除できます）
 - **URLセキュリティチェック（v2.1.0）**：IPアドレスへのリンク、国際化ドメイン（xn--）、ユーザー情報を含むURLなど、怪しいリンクを開く前に警告します（OFFにもできます）
 - **その他**：記事モード、タブと履歴、デスクトップサイト切替、細かい設定を集約した設定画面、日本語／英語の表示切替（設定 → 言語）
+
+## v2.3.15の新機能
+
+- **選択シートの追従ピルが安定しました**：実機でドラッグ中にピルが揺れて、行のアイコンが虹色に滲んでいました。原因は2つで、ピルのガラスが移動のたびにリサイズされ（バネの両端が動くと高さが変わるため）、ガラス側が毎フレーム再レイアウトと再記録を繰り返していたことと、屈折・色分散は動いている行をサンプルする以上、値を弱めても滲みが消えなかったことです。ガラスはドラッグ開始時にサイズを固定してあとは移動（平行移動）だけにし、追従中はぼかし＋色味だけのフロストカプセルにしました。滲む要素がもうありません
 
 ## v2.3.14の新機能
 
