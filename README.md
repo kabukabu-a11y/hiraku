@@ -26,6 +26,10 @@ After installing, set Hiraku as your default browser so links from other apps ar
 - **URL security check (v2.1.0)**: warns before opening suspicious links (IP-address hosts, punycode domains, URLs with embedded user info). Can be turned off.
 - **And more**: article mode, tabs & history, desktop site toggle, a dedicated settings screen, and a Japanese / English UI (Settings → Language).
 
+## What's new in v2.3.14
+
+- **The overlay browser's bar is now Safari-style**: the old two-row bar (title row + seven-icon row) is replaced by a single floating row — a full-round pill in the middle (back, site icon, page title, reload) flanked by round buttons for close, expand and menu. Dragging the pill moves the window, as the title row did before. The to-bubble action and the ad-block chip moved into the menu; the menu's ad-block row now shows the blocked count. The liquid glass behind the bar is unchanged and still reaches the window's edge. (Design ported clean-room from the Safari bottom-bar pattern; no code copied.)
+
 ## What's new in v2.3.13
 
 Includes v2.3.11 and v2.3.12 below (v2.3.11's build broke on a file-editing accident on our side; repaired here), plus:
@@ -176,6 +180,10 @@ The ad-blocking list is built from the public [pgl.yoyo.org adservers](https://p
 - **共有先アプリを選択画面に（v2.3.0）**：クイック共有は廃止し、共有を受け付けるアプリが選択画面に「開き方」として直接並ぶようになりました（設定で追加・削除できます）
 - **URLセキュリティチェック（v2.1.0）**：IPアドレスへのリンク、国際化ドメイン（xn--）、ユーザー情報を含むURLなど、怪しいリンクを開く前に警告します（OFFにもできます）
 - **その他**：記事モード、タブと履歴、デスクトップサイト切替、細かい設定を集約した設定画面、日本語／英語の表示切替（設定 → 言語）
+
+## v2.3.14の新機能
+
+- **重ねてブラウザのバーがSafari式に**：今までの2段バー（タイトル行＋アイコン7個の行）を、浮いた1段に作り替えました。中央に全面丸のピル（戻る・サイトアイコン・ページタイトル・再読込）、両脇に丸ボタン（閉じる・展開・メニュー）です。ピルをドラッグすると窓が動きます（今までのタイトル行の役割）。「バブルにする」と広告ブロックのチップはメニューへ移し、メニューの広告ブロック行にブロック件数が出るようにしました。バー裏の液体ガラスは今まで通りで、窓の縁まで続いています（Safariの下バーの設計を寸法だけ参考にしたクリーンルーム移植で、コードの複製はしていません）
 
 ## v2.3.13の新機能
 

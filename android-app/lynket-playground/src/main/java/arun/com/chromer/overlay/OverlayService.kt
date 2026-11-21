@@ -104,10 +104,9 @@ class OverlayService : Service() {
   private var windowManager: WindowManager? = null
   private var rootView: FrameLayout? = null
   private var titleView: TextView? = null
-  private var urlView: TextView? = null
   private var backButton: View? = null
   private var faviconView: ImageView? = null
-  private var barTopRow: View? = null
+  private var pillView: View? = null
   private var barView: View? = null
   // v2.3.10 (item 100): the bar's real liquid glass, when
   // active (API 33+ and glass on).
@@ -124,8 +123,6 @@ class OverlayService : Service() {
   private var menuAboveAnchor: Boolean = true
   private var menuPivotX: Float = 0f
   private var menuPivotY: Float = 0f
-  private var shieldView: TextView? = null
-  private var shieldCountView: TextView? = null
   private var progressBar: ProgressBar? = null
   private var webView: WebView? = null
   private var layoutParams: WindowManager.LayoutParams? = null
@@ -357,7 +354,6 @@ class OverlayService : Service() {
             // This callback runs on a background thread: never touch
             // views here, post the badge update to the main thread.
             blockedCount.incrementAndGet()
-            mainHandler.post { updateShield() }
             return AdBlocker.emptyResponse()
           }
           return super.shouldInterceptRequest(view, request)
@@ -384,17 +380,14 @@ class OverlayService : Service() {
         override fun onPageStarted(view: WebView?, url: String?, favicon: Bitmap?) {
           if (!url.isNullOrBlank()) {
             currentUrl = url
-            urlView?.text = url
           }
           blockedCount.set(0)
-          updateShield()
           updateNavigationButtons(view)
         }
 
         override fun onPageFinished(view: WebView?, url: String?) {
           if (!url.isNullOrBlank()) {
             currentUrl = url
-            urlView?.text = url
           }
           val displayTitle = view?.title?.takeIf { it.isNotBlank() } ?: url.orEmpty()
           if (displayTitle.isNotEmpty()) {
@@ -462,9 +455,9 @@ class OverlayService : Service() {
     ).apply {
       gravity = if (barOnTop) Gravity.TOP else Gravity.BOTTOM
       if (barOnTop) {
-        topMargin = dp(BAR_TOP_ROW_DP + BAR_ICON_ROW_DP)
+        topMargin = dp(BAR_HEIGHT_DP)
       } else {
-        bottomMargin = dp(BAR_TOP_ROW_DP + BAR_ICON_ROW_DP + SIZE_BAND_DP)
+        bottomMargin = dp(BAR_HEIGHT_DP + SIZE_BAND_DP)
       }
     }
     root.addView(progress)
@@ -485,7 +478,7 @@ class OverlayService : Service() {
         layoutParams = FrameLayout.LayoutParams(
           ViewGroup.LayoutParams.MATCH_PARENT,
           dp(
-            BAR_TOP_ROW_DP + BAR_ICON_ROW_DP +
+            BAR_HEIGHT_DP +
               if (barOnTop) 0 else SIZE_BAND_DP
           )
         ).apply {
@@ -616,7 +609,7 @@ class OverlayService : Service() {
     var initialY = 0
     var initialRawX = 0f
     var initialRawY = 0f
-    (barTopRow ?: titleView)?.setOnTouchListener { v, event ->
+    pillView?.setOnTouchListener { v, event ->
       val wm = windowManager ?: return@setOnTouchListener false
       val r = rootView ?: return@setOnTouchListener false
       val p = layoutParams ?: return@setOnTouchListener false
@@ -890,9 +883,9 @@ class OverlayService : Service() {
             // plus 2dp of clearance.
             if (height == ViewGroup.LayoutParams.MATCH_PARENT) {
               if (barOnTop) {
-                topMargin = dp(BAR_TOP_ROW_DP + BAR_ICON_ROW_DP + 2)
+                topMargin = dp(BAR_HEIGHT_DP + 2)
               } else {
-                bottomMargin = dp(BAR_TOP_ROW_DP + BAR_ICON_ROW_DP + 2)
+                bottomMargin = dp(BAR_HEIGHT_DP + 2)
               }
             }
           }
@@ -1537,77 +1530,59 @@ class OverlayService : Service() {
   }
 
   private fun buildBar(): LinearLayout {
-    // v2.3.0: two rows. Top row: site icon + title + URL (dragging
-    // it moves the window). Bottom row: seven evenly spaced drawn
-    // icons. The whole bar is Liquid Glass.
+    // v2.3.14 (item 110): Safari-style single row, replacing
+    // the two-row bar. A full-round pill in the middle holds
+    // back / favicon / title / reload and doubles as the
+    // drag-to-move surface (the old top row's job); round
+    // buttons flank it: close on the left (still the START
+    // corner grip's tap target), expand and menu on the
+    // right (menu still the END grip's target). The
+    // to-bubble action and the AD chip moved into the menu;
+    // the menu's adblock row now carries the blocked count.
+    // Design ported clean-room from the Safari bottom bar
+    // pattern (44dp full-round pill, 40dp round side
+    // buttons); the bar still floats over the page with
+    // the liquid glass behind it (items 100/105).
+    val dark = onDarkSurface()
     val bar = LinearLayout(this).apply {
-      orientation = LinearLayout.VERTICAL
+      orientation = LinearLayout.HORIZONTAL
+      gravity = Gravity.CENTER_VERTICAL
       setBackgroundColor(glassBarColor())
+      setPadding(dp(10), dp(8), dp(10), dp(8))
       layoutParams = LinearLayout.LayoutParams(
         ViewGroup.LayoutParams.MATCH_PARENT,
         ViewGroup.LayoutParams.WRAP_CONTENT
       )
     }
 
-    val topRow = LinearLayout(this).apply {
-      orientation = LinearLayout.HORIZONTAL
-      gravity = Gravity.CENTER_VERTICAL
-      layoutParams = LinearLayout.LayoutParams(
-        ViewGroup.LayoutParams.MATCH_PARENT,
-        dp(BAR_TOP_ROW_DP)
-      )
-      setPadding(dp(12), 0, dp(12), 0)
-    }
-    val favicon = ImageView(this).apply {
-      layoutParams = LinearLayout.LayoutParams(dp(20), dp(20))
-      scaleType = ImageView.ScaleType.FIT_CENTER
-    }
-    val titleColumn = LinearLayout(this).apply {
-      orientation = LinearLayout.VERTICAL
-      layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
-      setPadding(dp(8), 0, 0, 0)
-    }
-    val title = TextView(this).apply {
-      setTextColor(Color.WHITE)
-      text = currentUrl
-      isSingleLine = true
-      ellipsize = TextUtils.TruncateAt.END
-      textSize = 13f
-    }
-    val url = TextView(this).apply {
-      setTextColor(0xFFBDC1C6.toInt())
-      text = currentUrl
-      isSingleLine = true
-      ellipsize = TextUtils.TruncateAt.END
-      textSize = 10f
-    }
-    titleColumn.addView(title)
-    titleColumn.addView(url)
-    topRow.addView(favicon)
-    topRow.addView(titleColumn)
-    if (!onDarkSurface()) {
-      title.setTextColor(0xFF202124.toInt())
-      url.setTextColor(0xFF5F6368.toInt())
-    }
-
-    val iconRow = LinearLayout(this).apply {
-      orientation = LinearLayout.HORIZONTAL
-      layoutParams = LinearLayout.LayoutParams(
-        ViewGroup.LayoutParams.MATCH_PARENT,
-        dp(BAR_ICON_ROW_DP)
-      )
-    }
-
-    val close = createBarIconButton(R.drawable.ic_ov_close).apply {
+    val close = createBarCircleButton(R.drawable.ic_ov_close).apply {
       contentDescription = getString(R.string.act_close)
       setOnClickListener { closeOverlay() }
     }
     barCloseButton = close
-    val toBubble = createBarIconButton(R.drawable.ic_ov_minimize).apply {
-      contentDescription = getString(R.string.overlay_to_bubble)
-      setOnClickListener { convertToBubble() }
+    bar.addView(close)
+
+    val pill = LinearLayout(this).apply {
+      orientation = LinearLayout.HORIZONTAL
+      gravity = Gravity.CENTER_VERTICAL
+      layoutParams = LinearLayout.LayoutParams(0, dp(44), 1f).apply {
+        marginStart = dp(8)
+        marginEnd = dp(8)
+      }
+      background = GradientDrawable().apply {
+        shape = GradientDrawable.RECTANGLE
+        cornerRadius = dp(22).toFloat()
+        setColor(if (dark) 0x26FFFFFF else 0x14000000)
+      }
+      setPadding(dp(4), 0, dp(4), 0)
     }
-    val back = createBarIconButton(R.drawable.ic_ov_back).apply {
+    val back = ImageView(this).apply {
+      setImageResource(R.drawable.ic_ov_back)
+      scaleType = ImageView.ScaleType.CENTER_INSIDE
+      setPadding(dp(6), dp(6), dp(6), dp(6))
+      layoutParams = LinearLayout.LayoutParams(
+        dp(32), ViewGroup.LayoutParams.MATCH_PARENT
+      )
       isEnabled = false
       alpha = 0.4f
       contentDescription = getString(R.string.act_back)
@@ -1616,59 +1591,57 @@ class OverlayService : Service() {
           webView?.goBack()
         }
       }
-    }
-
-    // The AD chip keeps its cell like the other six items.
-    val shieldCell = FrameLayout(this).apply {
-      layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f)
-    }
-    val shield = TextView(this).apply {
-      text = "AD"
-      setTextColor(Color.WHITE)
-      textSize = 12f
-      gravity = Gravity.CENTER
-      background = GradientDrawable().apply {
-        shape = GradientDrawable.RECTANGLE
-        cornerRadius = dp(8).toFloat()
-        setColor(0xFF5F6368.toInt())
-      }
-      layoutParams = FrameLayout.LayoutParams(dp(38), dp(28)).apply {
-        gravity = Gravity.CENTER
-      }
-      setOnClickListener {
-        toggleAdBlock()
+      if (!dark) {
+        setColorFilter(0xFF202124.toInt())
       }
     }
-    val shieldCount = TextView(this).apply {
-      setTextColor(0xFF8AB4F8.toInt())
-      textSize = 10f
-      visibility = View.GONE
-      layoutParams = FrameLayout.LayoutParams(
-        ViewGroup.LayoutParams.WRAP_CONTENT,
-        ViewGroup.LayoutParams.WRAP_CONTENT
-      ).apply {
-        gravity = Gravity.TOP or Gravity.END
-        marginEnd = dp(6)
-        topMargin = dp(4)
-      }
+    backButton = back
+    pill.addView(back)
+    val favicon = ImageView(this).apply {
+      layoutParams = LinearLayout.LayoutParams(dp(18), dp(18))
+      scaleType = ImageView.ScaleType.FIT_CENTER
     }
-    shieldCell.addView(shield)
-    shieldCell.addView(shieldCount)
-
-    val reload = createBarIconButton(R.drawable.ic_ov_reload).apply {
+    pill.addView(favicon)
+    val title = TextView(this).apply {
+      setTextColor(if (dark) Color.WHITE else 0xFF202124.toInt())
+      text = currentUrl
+      isSingleLine = true
+      ellipsize = TextUtils.TruncateAt.END
+      textSize = 13.5f
+      layoutParams = LinearLayout.LayoutParams(
+        0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f
+      )
+      setPadding(dp(7), 0, dp(4), 0)
+    }
+    pill.addView(title)
+    val reload = ImageView(this).apply {
+      setImageResource(R.drawable.ic_ov_reload)
+      scaleType = ImageView.ScaleType.CENTER_INSIDE
+      setPadding(dp(6), dp(6), dp(6), dp(6))
+      layoutParams = LinearLayout.LayoutParams(
+        dp(32), ViewGroup.LayoutParams.MATCH_PARENT
+      )
       contentDescription = getString(R.string.act_reload)
       setOnClickListener { webView?.reload() }
+      if (!dark) {
+        setColorFilter(0xFF202124.toInt())
+      }
     }
-    val expand = createBarIconButton(R.drawable.ic_ov_expand).apply {
+    pill.addView(reload)
+    bar.addView(pill)
+
+    val expand = createBarCircleButton(R.drawable.ic_ov_expand).apply {
       contentDescription = getString(R.string.overlay_expand)
       setOnClickListener { togglePeek() }
     }
-    val menu = createBarIconButton(R.drawable.ic_ov_more).apply {
+    bar.addView(expand)
+    val menu = createBarCircleButton(
+      R.drawable.ic_ov_more, marginStartDp = 8
+    ).apply {
       contentDescription = getString(R.string.act_menu)
       setOnClickListener {
-        // Toggle (v2.3.1 item 69): pressing ⋮ while the menu is
-        // open closes it (with the close animation) instead of
-        // reopening it.
+        // Toggle (v2.3.1 item 69): pressing the menu button
+        // while the menu is open closes it.
         if (menuView != null) {
           hideMenu(animated = true)
         } else {
@@ -1677,65 +1650,47 @@ class OverlayService : Service() {
       }
     }
     barMenuButton = menu
-
-    iconRow.addView(close)
-    iconRow.addView(toBubble)
-    iconRow.addView(back)
-    iconRow.addView(shieldCell)
-    iconRow.addView(reload)
-    iconRow.addView(expand)
-    iconRow.addView(menu)
-
-    bar.addView(topRow)
-    bar.addView(iconRow)
+    bar.addView(menu)
 
     titleView = title
-    urlView = url
-    backButton = back
     faviconView = favicon
-    barTopRow = topRow
-    shieldView = shield
-    shieldCountView = shieldCount
-    updateShield()
+    pillView = pill
     return bar
   }
 
-  /** One cell of the bar's icon row: a drawn vector icon, evenly sized. */
-  private fun createBarIconButton(drawableRes: Int): ImageView {
-    return ImageView(this).apply {
+  /** One round side button of the Safari-style bar. */
+  private fun createBarCircleButton(
+    drawableRes: Int,
+    marginStartDp: Int = 0
+  ): FrameLayout {
+    val frame = FrameLayout(this).apply {
+      layoutParams = LinearLayout.LayoutParams(dp(40), dp(40)).apply {
+        if (marginStartDp > 0) marginStart = dp(marginStartDp)
+      }
+      background = GradientDrawable().apply {
+        shape = GradientDrawable.OVAL
+        setColor(if (onDarkSurface()) 0x26FFFFFF else 0x14000000)
+      }
+    }
+    val icon = ImageView(this).apply {
       setImageResource(drawableRes)
       scaleType = ImageView.ScaleType.CENTER_INSIDE
-      setPadding(dp(11), dp(11), dp(11), dp(11))
-      layoutParams = LinearLayout.LayoutParams(
-        0,
+      setPadding(dp(10), dp(10), dp(10), dp(10))
+      layoutParams = FrameLayout.LayoutParams(
         ViewGroup.LayoutParams.MATCH_PARENT,
-        1f
+        ViewGroup.LayoutParams.MATCH_PARENT
       )
       if (!onDarkSurface()) {
         setColorFilter(0xFF202124.toInt())
       }
     }
-  }
-
-  private fun updateShield() {
-    val chip = shieldView ?: return
-    val drawable = chip.background as? GradientDrawable
-    drawable?.setColor(if (adBlockEnabled) 0xFF8AB4F8.toInt() else 0xFF5F6368.toInt())
-    chip.setTextColor(if (adBlockEnabled) 0xFF202124.toInt() else Color.WHITE)
-    val count = shieldCountView ?: return
-    val blocked = blockedCount.get()
-    if (blocked > 0) {
-      count.text = blocked.toString()
-      count.visibility = View.VISIBLE
-    } else {
-      count.visibility = View.GONE
-    }
+    frame.addView(icon)
+    return frame
   }
 
   private fun toggleAdBlock() {
     adBlockEnabled = !adBlockEnabled
     LinkPreferences.setAdBlockEnabled(this, adBlockEnabled)
-    updateShield()
     Toast.makeText(
       this,
       if (adBlockEnabled) getString(R.string.adblock_on) else getString(R.string.adblock_off),
@@ -2340,6 +2295,12 @@ class OverlayService : Service() {
   private fun buildMainMenuPage(content: LinearLayout) {
     val checkSuffix = " ✓"
     content.addView(
+      menuRow(R.drawable.ic_ov_minimize, getString(R.string.overlay_to_bubble)) {
+        hideMenu()
+        convertToBubble()
+      }
+    )
+    content.addView(
       menuRow(R.drawable.ic_ov_forward, getString(R.string.act_forward),
         enabled = webView?.canGoForward() == true) {
         hideMenu()
@@ -2382,7 +2343,12 @@ class OverlayService : Service() {
     content.addView(
       menuRow(
         R.drawable.ic_ov_shield,
-        getString(R.string.adblock_title) + if (adBlockEnabled) checkSuffix else ""
+        buildString {
+          append(getString(R.string.adblock_title))
+          if (adBlockEnabled) append(checkSuffix)
+          val n = blockedCount.get()
+          if (n > 0) append(" · ").append(n)
+        }
       ) {
         toggleAdBlock()
         showMenuPage(MenuPage.MAIN)
@@ -2598,7 +2564,7 @@ class OverlayService : Service() {
     findBarView = null
     findBarParams = null
     barView = null
-    barTopRow = null
+    pillView = null
     handleView?.let { handle ->
       try {
         windowManager?.removeView(handle)
@@ -2619,13 +2585,10 @@ class OverlayService : Service() {
       wv.destroy()
     }
     rootView = null
-    barTopRow = null
+    pillView = null
     faviconView = null
     titleView = null
-    urlView = null
     backButton = null
-    shieldView = null
-    shieldCountView = null
     progressBar = null
     webView = null
     layoutParams = null
@@ -2646,8 +2609,7 @@ class OverlayService : Service() {
     private const val BAR_COLOR = 0xFF202124.toInt()
     // The bar's real row heights: buildBar builds exactly these,
     // and the resize strips stop at their sum (item 76).
-    private const val BAR_TOP_ROW_DP = 46
-    private const val BAR_ICON_ROW_DP = 52
+    private const val BAR_HEIGHT_DP = 60
     private const val SIZE_BAND_DP = 18
     private const val DESKTOP_UA =
       "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
