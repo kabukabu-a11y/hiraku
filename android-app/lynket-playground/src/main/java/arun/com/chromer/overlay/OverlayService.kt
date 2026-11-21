@@ -131,6 +131,14 @@ class OverlayService : Service() {
   private var catcherView: View? = null
   private var findBarView: View? = null
   private var findBarParams: WindowManager.LayoutParams? = null
+  // v2.3.16 (item 117): the menu panel's real liquid glass.
+  private var menuGlassView: LiquidGlassView? = null
+  // v2.3.16 (item 119): the pill-tap URL editor window.
+  private var urlEditorView: View? = null
+  private var urlEditorParams: WindowManager.LayoutParams? = null
+  private var urlEditorInput: android.widget.EditText? = null
+  // v2.3.16 (item 116): coalesces drag-time window updates.
+  private var layoutUpdatePosted: Boolean = false
   // Backdrop-blur state (v2.3.3 items 81/86/87): whether the
   // settings want the blur on this window, whether it is
   // currently applied, and how many pause holds (geometry
@@ -632,7 +640,7 @@ class OverlayService : Service() {
           p.x = (initialX + (event.rawX - initialRawX).toInt()).coerceIn(0, maxX)
           p.y = (initialY + (event.rawY - initialRawY).toInt()).coerceIn(0, maxY)
           try {
-            wm.updateViewLayout(r, p)
+            requestWindowLayoutUpdate(r, p)
           } catch (_: Exception) {
           }
           true
@@ -640,7 +648,19 @@ class OverlayService : Service() {
 
         MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
           setBlurPaused(false)
-          saveGeometry()
+          // v2.3.16 (item 119): a tap on the pill (released
+          // quickly, barely moved) opens the URL editor —
+          // the pill is the bar's address field, as in
+          // Safari. A real drag still just moves the window.
+          val isTap = event.actionMasked == MotionEvent.ACTION_UP &&
+            event.eventTime - event.downTime < 350 &&
+            kotlin.math.abs(event.rawX - initialRawX) < dp(10) &&
+            kotlin.math.abs(event.rawY - initialRawY) < dp(10)
+          if (isTap) {
+            showUrlEditor()
+          } else {
+            saveGeometry()
+          }
           v.performClick()
           true
         }
@@ -694,7 +714,7 @@ class OverlayService : Service() {
           p.height = (bandStartH + dy).coerceIn(dp(200), maxH)
           p.y = bandStartY
           try {
-            wm.updateViewLayout(r, p)
+            requestWindowLayoutUpdate(r, p)
           } catch (_: Exception) {
           }
           true
@@ -808,7 +828,7 @@ class OverlayService : Service() {
               startY.coerceIn(0, (maxBottom - newH).coerceAtLeast(0))
             }
             try {
-              wm.updateViewLayout(r, p)
+              requestWindowLayoutUpdate(r, p)
             } catch (_: Exception) {
             }
             true
@@ -942,7 +962,7 @@ class OverlayService : Service() {
                 p.height = (maxBottom - p.y).coerceAtLeast(dp(200))
               }
               try {
-                wm.updateViewLayout(r, p)
+                requestWindowLayoutUpdate(r, p)
               } catch (_: Exception) {
               }
               true
@@ -1006,6 +1026,15 @@ class OverlayService : Service() {
     rootView = root
     progressBar = progress
     webView = wv
+    // v2.3.16 (item 114): WebView scrolling does not
+    // invalidate the view tree, so the bar's liquid glass
+    // kept refracting a frozen slice of the page while the
+    // page moved underneath it. Ask the glass views to
+    // re-record on scroll.
+    wv.setOnScrollChangeListener { _, _, _, _, _ ->
+      barGlassView?.invalidate()
+      menuGlassView?.invalidate()
+    }
     layoutParams = params
 
     // The surround catcher must be added BEFORE the overlay window so
@@ -1192,7 +1221,7 @@ class OverlayService : Service() {
           p.x = (startX + (event.rawX - rawX).toInt()).coerceIn(0, maxX)
           p.y = (startY + (event.rawY - rawY).toInt()).coerceIn(0, maxY)
           try {
-            wm.updateViewLayout(r, p)
+            requestWindowLayoutUpdate(r, p)
           } catch (_: Exception) {
           }
           true
@@ -1325,6 +1354,33 @@ class OverlayService : Service() {
    * does not turn translucent mid-drag — without covering the
    * page the way the removed drag cover did (item 86).
    */
+  /**
+   * v2.3.16 (item 116): geometry drags used to call
+   * updateViewLayout on every MOVE event, so the window,
+   * the WebView and the bar re-laid out many times per
+   * frame and flickered on device (appearing and
+   * disappearing while resizing). Drag updates are now
+   * coalesced to at most one per animation frame; the
+   * handlers keep mutating the same params object, so the
+   * posted update always applies the latest geometry, and
+   * a final posted update still lands after the last MOVE.
+   */
+  private fun requestWindowLayoutUpdate(
+    view: View,
+    params: WindowManager.LayoutParams
+  ) {
+    if (layoutUpdatePosted) return
+    val host = rootView ?: view
+    layoutUpdatePosted = true
+    host.postOnAnimation {
+      layoutUpdatePosted = false
+      try {
+        windowManager?.updateViewLayout(view, params)
+      } catch (_: Exception) {
+      }
+    }
+  }
+
   private fun setBlurPaused(paused: Boolean) {
     if (Build.VERSION.SDK_INT < 31) return
     if (paused) {
@@ -1529,6 +1585,139 @@ class OverlayService : Service() {
     rootView?.requestFocus()
   }
 
+  // v2.3.16 (item 119): tapping the bar's pill opens this
+  // URL editor — the full current URL, editable, with
+  // search for non-URL input (the same normalization as
+  // the in-app browser). The window pattern mirrors the
+  // find bar, with the menu's open animation.
+  private fun showUrlEditor() {
+    if (urlEditorView != null) return
+    hideFindBar()
+    val wm = windowManager ?: return
+    val op = layoutParams ?: return
+    val metrics = resources.displayMetrics
+    val dark = onDarkSurface()
+    val barOnTop = LinkPreferences.isBarOnTop(this)
+    val editor = LinearLayout(this).apply {
+      orientation = LinearLayout.HORIZONTAL
+      gravity = Gravity.CENTER_VERTICAL
+      setPadding(dp(14), dp(6), dp(6), dp(6))
+      background = GradientDrawable().apply {
+        setColor(glassBarColor())
+        cornerRadius = dp(24).toFloat()
+        setStroke(dp(1), if (dark) 0x38FFFFFF else 0x22000000)
+      }
+      elevation = dp(10).toFloat()
+    }
+    val input = android.widget.EditText(this).apply {
+      setText(currentUrl)
+      selectAll()
+      setTextColor(if (dark) Color.WHITE else 0xFF202124.toInt())
+      setHintTextColor(
+        if (dark) 0xFFBDC1C6.toInt() else 0xFF5F6368.toInt()
+      )
+      hint = getString(R.string.home_url_hint)
+      textSize = 14f
+      isSingleLine = true
+      imeOptions = android.view.inputmethod.EditorInfo.IME_ACTION_GO
+      layoutParams = LinearLayout.LayoutParams(
+        0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f
+      )
+      setOnEditorActionListener { _, actionId, _ ->
+        if (actionId ==
+          android.view.inputmethod.EditorInfo.IME_ACTION_GO
+        ) {
+          submitUrlFromEditor()
+          true
+        } else {
+          false
+        }
+      }
+    }
+    urlEditorInput = input
+    val go = TextView(this).apply {
+      text = getString(R.string.act_open)
+      setTextColor(if (dark) Color.WHITE else 0xFF202124.toInt())
+      textSize = 14f
+      gravity = Gravity.CENTER
+      layoutParams = LinearLayout.LayoutParams(dp(52), dp(40))
+      setOnClickListener { submitUrlFromEditor() }
+    }
+    editor.addView(input)
+    editor.addView(go)
+    val editorW = if (op.width > 0) {
+      op.width - dp(20)
+    } else {
+      metrics.widthPixels - dp(40)
+    }
+    val ep = WindowManager.LayoutParams(
+      editorW,
+      WindowManager.LayoutParams.WRAP_CONTENT,
+      WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
+      WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL,
+      PixelFormat.TRANSLUCENT
+    ).apply {
+      gravity = Gravity.TOP or Gravity.START
+      x = op.x + (op.width - editorW) / 2
+      y = if (barOnTop) {
+        op.y + dp(BAR_HEIGHT_DP + 10)
+      } else {
+        (op.y + op.height - dp(BAR_HEIGHT_DP + SIZE_BAND_DP + 66))
+          .coerceAtLeast(statusBarHeight() + dp(4))
+      }
+      if (LinkPreferences.getAnimLevel(this@OverlayService) !=
+        LinkPreferences.ANIM_OFF
+      ) {
+        windowAnimations = R.style.OverlayMenuAnim
+      }
+    }
+    try {
+      wm.addView(editor, ep)
+      urlEditorView = editor
+      urlEditorParams = ep
+      input.requestFocus()
+      val imm = getSystemService(
+        android.view.inputmethod.InputMethodManager::class.java
+      )
+      imm?.showSoftInput(
+        input,
+        android.view.inputmethod.InputMethodManager.SHOW_IMPLICIT
+      )
+    } catch (_: Exception) {
+      urlEditorView = null
+      urlEditorParams = null
+      urlEditorInput = null
+    }
+  }
+
+  private fun submitUrlFromEditor() {
+    val raw = urlEditorInput?.text?.toString().orEmpty()
+    val target =
+      arun.com.chromer.browser.BrowserActivity.normalizeUrl(raw)
+    hideUrlEditor()
+    if (target.isNotEmpty()) {
+      webView?.loadUrl(target)
+    }
+  }
+
+  private fun hideUrlEditor() {
+    val editor = urlEditorView ?: return
+    urlEditorView = null
+    urlEditorParams = null
+    urlEditorInput = null
+    try {
+      val imm = getSystemService(
+        android.view.inputmethod.InputMethodManager::class.java
+      )
+      imm?.hideSoftInputFromWindow(editor.windowToken, 0)
+    } catch (_: Exception) {
+    }
+    try {
+      windowManager?.removeView(editor)
+    } catch (_: Exception) {
+    }
+  }
+
   private fun buildBar(): LinearLayout {
     // v2.3.14 (item 110): Safari-style single row, replacing
     // the two-row bar. A full-round pill in the middle holds
@@ -1630,7 +1819,17 @@ class OverlayService : Service() {
     pill.addView(reload)
     bar.addView(pill)
 
-    val expand = createBarCircleButton(R.drawable.ic_ov_expand).apply {
+    // v2.3.16 (item 118): the to-bubble (minus) button is
+    // back on the bar, next to the expand (plus) button —
+    // buried in the menu it was too slow to reach.
+    val toBubble = createBarCircleButton(R.drawable.ic_ov_minimize).apply {
+      contentDescription = getString(R.string.overlay_to_bubble)
+      setOnClickListener { convertToBubble() }
+    }
+    bar.addView(toBubble)
+    val expand = createBarCircleButton(
+      R.drawable.ic_ov_expand, marginStartDp = 8
+    ).apply {
       contentDescription = getString(R.string.overlay_expand)
       setOnClickListener { togglePeek() }
     }
@@ -1969,7 +2168,7 @@ class OverlayService : Service() {
           hp.x = (downX + dx).coerceIn(0, (metrics.widthPixels - size).coerceAtLeast(0))
           hp.y = (downY + dy).coerceIn(0, (metrics.heightPixels - size).coerceAtLeast(0))
           try {
-            wm.updateViewLayout(handle, hp)
+            requestWindowLayoutUpdate(handle, hp)
           } catch (_: Exception) {
           }
           true
@@ -2030,10 +2229,18 @@ class OverlayService : Service() {
     val wm = windowManager ?: return
     menuAnchorView = anchor
     val dark = onDarkSurface()
+    // v2.3.16 (item 117): the panel gets the real liquid
+    // glass behind its content (dark surfaces, glass on),
+    // and the content scrolls inside a capped-height panel
+    // (see positionMenu) instead of overflowing the screen.
+    val menuGlassOn = Build.VERSION.SDK_INT >= 33 && dark &&
+      LinkPreferences.isGlassEnabled(this) && webView != null
     val content = LinearLayout(this).apply {
       orientation = LinearLayout.VERTICAL
       background = GradientDrawable().apply {
-        setColor(glassBarColor())
+        if (!menuGlassOn) {
+          setColor(glassBarColor())
+        }
         cornerRadius = dp(22).toFloat()
         setStroke(dp(1), if (dark) 0x38FFFFFF else 0x22000000)
       }
@@ -2043,7 +2250,31 @@ class OverlayService : Service() {
     menuContent = content
 
     val panel = FrameLayout(this).apply {
-      addView(content)
+      clipChildren = false
+      clipToPadding = false
+      if (menuGlassOn) {
+        val wv = webView
+        val glass = LiquidGlassView(this@OverlayService).apply {
+          setCornerRadius(dp(22).toFloat())
+          setTintColorRed(28f / 255f)
+          setTintColorGreen(28f / 255f)
+          setTintColorBlue(30f / 255f)
+          setTintAlpha(0.30f)
+          setBlurRadius(24f)
+          isClickable = false
+          isFocusable = false
+        }
+        addView(glass)
+        menuGlassView = glass
+        if (wv != null) {
+          glass.post { glass.bind(wv) }
+        }
+      }
+      val scroller = android.widget.ScrollView(this@OverlayService).apply {
+        isVerticalScrollBarEnabled = false
+        addView(content)
+      }
+      addView(scroller)
     }
     menuView = panel
     val params = WindowManager.LayoutParams(
@@ -2096,6 +2327,7 @@ class OverlayService : Service() {
     val panel = menuView ?: return
     val params = menuParams ?: return
     val anchor = menuAnchorView ?: return
+    val content = menuContent ?: return
     val metrics = resources.displayMetrics
     val screenW = metrics.widthPixels
     val screenH = metrics.heightPixels
@@ -2107,9 +2339,9 @@ class OverlayService : Service() {
       0,
       View.MeasureSpec.UNSPECIFIED
     )
-    panel.measure(widthSpec, heightSpec)
+    content.measure(widthSpec, heightSpec)
     val menuW = params.width
-    val menuH = panel.measuredHeight
+    val menuH = content.measuredHeight
     val anchorLoc = IntArray(2)
     anchor.getLocationOnScreen(anchorLoc)
     val gap = dp(6)
@@ -2117,23 +2349,61 @@ class OverlayService : Service() {
     val topSafe = statusBarHeight() + dp(4)
     var x = anchorLoc[0] + anchor.width - menuW
     x = x.coerceIn(margin, (screenW - menuW - margin).coerceAtLeast(margin))
-    val aboveY = anchorLoc[1] - gap - menuH
-    menuAboveAnchor = aboveY >= topSafe
-    var y = if (menuAboveAnchor) {
-      aboveY
+    // v2.3.16 (item 117): the panel used to fall back to
+    // below the anchor whenever it did not fit above, then
+    // get clamped to the screen's bottom edge — detached
+    // from the button, floating over whatever app was
+    // under the window (the user's screenshot). It now
+    // stays attached to the anchor: the side with more
+    // room wins (above preferred), and if the full menu
+    // fits on neither side, the panel's height is capped
+    // to that side's space and the content scrolls inside.
+    val aboveAvail = anchorLoc[1] - gap - topSafe
+    val belowAvail = screenH - bottomGestureExclusionPx() -
+      (anchorLoc[1] + anchor.height + gap)
+    val above = menuH <= aboveAvail || aboveAvail >= belowAvail
+    val avail = if (above) aboveAvail else belowAvail
+    val cappedH = minOf(menuH, avail.coerceAtLeast(dp(160)))
+    params.height = if (cappedH < menuH) {
+      cappedH
+    } else {
+      WindowManager.LayoutParams.WRAP_CONTENT
+    }
+    var y = if (above) {
+      anchorLoc[1] - gap - cappedH
     } else {
       anchorLoc[1] + anchor.height + gap
     }
-    // The menu's bottom edge also stays out of the system gesture
-    // strip (item 80): the panel is a touchable window, and near the
-    // bottom of the screen it would otherwise reach into the strip.
-    val maxY = (screenH - menuH - bottomGestureExclusionPx()).coerceAtLeast(topSafe)
+    val maxY = (screenH - cappedH - bottomGestureExclusionPx())
+      .coerceAtLeast(topSafe)
     y = y.coerceIn(topSafe, maxY)
     params.x = x
     params.y = y
+    menuAboveAnchor = above
     menuPivotX = (anchorLoc[0] + anchor.width / 2f - x)
       .coerceIn(0f, menuW.toFloat())
-    menuPivotY = if (menuAboveAnchor) menuH.toFloat() else 0f
+    menuPivotY = if (above) cappedH.toFloat() else 0f
+    // v2.3.16 (item 117): align the menu's liquid glass
+    // with the page behind the panel. The glass samples
+    // with window-relative offsets, but it lives in the
+    // menu's own window — so it is laid out shifted by
+    // the menu↔overlay window delta and drawn back with
+    // the opposite translation, which puts the sampled
+    // region exactly behind the panel.
+    val glass = menuGlassView
+    if (glass != null) {
+      val op = layoutParams
+      val dx = params.x - (op?.x ?: params.x)
+      val dy = params.y - (op?.y ?: params.y)
+      val glp = glass.layoutParams as FrameLayout.LayoutParams
+      glp.width = menuW
+      glp.height = cappedH
+      glp.leftMargin = dx
+      glp.topMargin = dy
+      glass.layoutParams = glp
+      glass.translationX = -dx.toFloat()
+      glass.translationY = -dy.toFloat()
+    }
     if (panel.isAttachedToWindow) {
       try {
         windowManager?.updateViewLayout(panel, params)
@@ -2142,15 +2412,6 @@ class OverlayService : Service() {
     }
   }
 
-  /**
-   * A transparent window behind the menu panel that consumes
-   * every touch outside the panel and closes the menu (item 79).
-   * Because the closing tap is consumed here, it can never reach
-   * the ⋮ button and re-open the menu — the race that broke the
-   * v2.3.1 toggle. Like the passthrough catcher, it stops above
-   * the system gesture strip (item 75).
-   */
-  @SuppressLint("ClickableViewAccessibility")
   private fun addMenuCatcher() {
     removeMenuCatcher()
     val wm = windowManager ?: return
@@ -2197,6 +2458,7 @@ class OverlayService : Service() {
     menuView = null
     menuParams = null
     menuContent = null
+    menuGlassView = null
     if (animated &&
       LinkPreferences.getAnimLevel(this) != LinkPreferences.ANIM_OFF
     ) {
@@ -2251,16 +2513,20 @@ class OverlayService : Service() {
     iconRes: Int,
     label: String,
     enabled: Boolean = true,
+    large: Boolean = false,
     onClick: () -> Unit
   ): View {
+    // v2.3.16 (item 115): the aspect page's rows use the
+    // large variant — taller rows, bigger icon and text,
+    // a much bigger touch target.
     val row = LinearLayout(this).apply {
       orientation = LinearLayout.HORIZONTAL
       gravity = Gravity.CENTER_VERTICAL
       layoutParams = LinearLayout.LayoutParams(
         ViewGroup.LayoutParams.MATCH_PARENT,
-        dp(48)
+        dp(if (large) 64 else 48)
       )
-      setPadding(dp(10), 0, dp(10), 0)
+      setPadding(dp(if (large) 14 else 10), 0, dp(if (large) 14 else 10), 0)
       alpha = if (enabled) 1f else 0.4f
       if (enabled) {
         setOnClickListener { onClick() }
@@ -2268,7 +2534,9 @@ class OverlayService : Service() {
     }
     val icon = ImageView(this).apply {
       setImageResource(iconRes)
-      layoutParams = LinearLayout.LayoutParams(dp(21), dp(21))
+      layoutParams = LinearLayout.LayoutParams(
+        dp(if (large) 26 else 21), dp(if (large) 26 else 21)
+      )
       if (!onDarkSurface()) {
         setColorFilter(0xFF202124.toInt())
       }
@@ -2276,7 +2544,7 @@ class OverlayService : Service() {
     val text = TextView(this).apply {
       text = label
       setTextColor(menuTextColor())
-      textSize = 14f
+      textSize = if (large) 16f else 14f
       isSingleLine = true
       ellipsize = TextUtils.TruncateAt.END
       layoutParams = LinearLayout.LayoutParams(
@@ -2511,20 +2779,20 @@ class OverlayService : Service() {
 
   private fun buildAspectMenuPage(content: LinearLayout) {
     content.addView(
-      menuRow(R.drawable.ic_ov_back, getString(R.string.act_back)) {
+      menuRow(R.drawable.ic_ov_back, getString(R.string.act_back), large = true) {
         showMenuPage(MenuPage.MAIN)
       }
     )
     for ((label, ratio) in ASPECT_RATIOS) {
       content.addView(
-        menuRow(R.drawable.ic_ov_aspect, label) {
+        menuRow(R.drawable.ic_ov_aspect, label, large = true) {
           hideMenu()
           applyAspect(ratio)
         }
       )
     }
     content.addView(
-      menuRow(R.drawable.ic_ov_expand, getString(R.string.aspect_full)) {
+      menuRow(R.drawable.ic_ov_expand, getString(R.string.aspect_full), large = true) {
         hideMenu()
         resetGeometry()
       }
@@ -2553,6 +2821,7 @@ class OverlayService : Service() {
     windowAnimator?.cancel()
     windowAnimator = null
     hideMenu()
+    hideUrlEditor()
     removeCatcher()
     blurPauseHolds = 0
     findBarView?.let { bar ->

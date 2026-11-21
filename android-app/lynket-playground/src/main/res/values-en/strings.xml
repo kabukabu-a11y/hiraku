@@ -11,6 +11,7 @@
     <string name="act_share">Share</string>
     <string name="act_forward">Forward</string>
     <string name="act_add">Add</string>
+    <string name="act_open">Open</string>
 
     <!-- Open methods -->
     <string name="method_custom_tab_primary">Chosen browser (Custom Tab)</string>

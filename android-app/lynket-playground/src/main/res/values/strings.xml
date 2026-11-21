@@ -31,6 +31,7 @@
     <string name="act_share">共有</string>
     <string name="act_forward">進む</string>
     <string name="act_add">追加</string>
+    <string name="act_open">開く</string>
 
     <!-- Open methods -->
     <string name="method_custom_tab_primary">選んだブラウザ（Custom Tab）</string>

@@ -41,12 +41,15 @@ import androidx.activity.ComponentActivity
 import androidx.activity.OnBackPressedCallback
 import androidx.activity.compose.setContent
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.expandVertically
+import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
-import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -178,6 +181,7 @@ class BrowserActivity : ComponentActivity() {
     var canGoForward by remember { mutableStateOf(false) }
     var menuExpanded by remember { mutableStateOf(false) }
     var barVisible by remember { mutableStateOf(true) }
+    var scrollAccum by remember { mutableIntStateOf(0) }
     var desktopMode by remember { mutableStateOf(LinkPreferences.isDesktopDefault(context)) }
     var forceDark by remember { mutableStateOf(LinkPreferences.isForceDark(context)) }
     var textZoom by remember { mutableIntStateOf(LinkPreferences.getTextZoom(context)) }
@@ -185,6 +189,8 @@ class BrowserActivity : ComponentActivity() {
     var findVisible by remember { mutableStateOf(false) }
     var findQuery by remember { mutableStateOf("") }
     var findInfo by remember { mutableStateOf("") }
+    var urlEditVisible by remember { mutableStateOf(false) }
+    var urlEditText by remember { mutableStateOf("") }
     var adBlockEnabled by remember { mutableStateOf(LinkPreferences.isAdBlockEnabled(context)) }
     var blockedCount by remember { mutableIntStateOf(0) }
     var chooserVisible by remember { mutableStateOf(false) }
@@ -203,7 +209,14 @@ class BrowserActivity : ComponentActivity() {
             contentDescription = stringResource(R.string.act_close)
           )
         }
-        Column(modifier = Modifier.weight(1f)) {
+        Column(
+          modifier = Modifier
+            .weight(1f)
+            .clickable {
+              urlEditText = currentUrl
+              urlEditVisible = true
+            }
+        ) {
           if (secret) {
             Text(
               text = stringResource(R.string.secret_mode),
@@ -495,13 +508,51 @@ class BrowserActivity : ComponentActivity() {
       )
     }
 
+    if (urlEditVisible) {
+      AlertDialog(
+        onDismissRequest = { urlEditVisible = false },
+        text = {
+          OutlinedTextField(
+            value = urlEditText,
+            onValueChange = { urlEditText = it },
+            label = { Text(stringResource(R.string.home_url_hint)) },
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth(),
+            keyboardOptions = KeyboardOptions(
+              imeAction = ImeAction.Go
+            ),
+            keyboardActions = KeyboardActions(onGo = {
+              val target = normalizeUrl(urlEditText)
+              if (target.isNotEmpty()) {
+                webView?.loadUrl(target)
+              }
+              urlEditVisible = false
+            })
+          )
+        },
+        confirmButton = {
+          TextButton(onClick = {
+            val target = normalizeUrl(urlEditText)
+            if (target.isNotEmpty()) {
+              webView?.loadUrl(target)
+            }
+            urlEditVisible = false
+          }) { Text(stringResource(R.string.act_open)) }
+        },
+        dismissButton = {
+          TextButton(onClick = { urlEditVisible = false }) {
+            Text(stringResource(R.string.method_cancel))
+          }
+        }
+      )
+    }
     Scaffold(
       topBar = {
         if (barOnTop) {
           AnimatedVisibility(
             visible = barVisible || !hideBarEnabled,
-            enter = expandVertically() + fadeIn(),
-            exit = shrinkVertically() + fadeOut()
+            enter = slideInVertically { -it } + fadeIn(),
+            exit = slideOutVertically { -it } + fadeOut()
           ) {
             androidx.compose.material3.Surface(
               color = MaterialTheme.colorScheme.surface,
@@ -523,8 +574,8 @@ class BrowserActivity : ComponentActivity() {
         if (!barOnTop) {
           AnimatedVisibility(
             visible = barVisible || !hideBarEnabled,
-            enter = expandVertically() + fadeIn(),
-            exit = shrinkVertically() + fadeOut()
+            enter = slideInVertically { it } + fadeIn(),
+            exit = slideOutVertically { it } + fadeOut()
           ) {
             BottomAppBar { barContent() }
           }
@@ -724,10 +775,25 @@ class BrowserActivity : ComponentActivity() {
               }
               setOnScrollChangeListener { _, _, scrollY, _, oldScrollY ->
                 if (hideBarEnabled) {
-                  if (scrollY > oldScrollY + 6 && scrollY > 100) {
+                  // v2.3.16 (items 112/113): accumulate the
+                  // scroll in one direction and flip only
+                  // past a threshold. The old per-event flip
+                  // restarted the bar's exit animation on
+                  // every jitter, wedging it half-hidden
+                  // with the text still visible.
+                  val dy = scrollY - oldScrollY
+                  if ((dy > 0 && scrollAccum < 0) ||
+                    (dy < 0 && scrollAccum > 0)
+                  ) {
+                    scrollAccum = 0
+                  }
+                  scrollAccum += dy
+                  if (scrollAccum > 60 && scrollY > 100) {
                     barVisible = false
-                  } else if (scrollY < oldScrollY - 6) {
+                    scrollAccum = 0
+                  } else if (scrollAccum < -60) {
                     barVisible = true
+                    scrollAccum = 0
                   }
                 }
               }

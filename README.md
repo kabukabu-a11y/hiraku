@@ -26,6 +26,16 @@ After installing, set Hiraku as your default browser so links from other apps ar
 - **URL security check (v2.1.0)**: warns before opening suspicious links (IP-address hosts, punycode domains, URLs with embedded user info). Can be turned off.
 - **And more**: article mode, tabs & history, desktop site toggle, a dedicated settings screen, and a Japanese / English UI (Settings → Language).
 
+## What's new in v2.3.16
+
+- **The in-app browser's bars slide away cleanly**: the hide-on-scroll bar could get wedged half-shown with its text still visible, and it shrank instead of sliding. Both bars now slide (the bottom bar slides down, as asked), and the scroll listener accumulates movement in one direction before flipping, so jitter can no longer restart the animation mid-way.
+- **The overlay bar's glass follows page scrolls**: scrolling the page re-records the glass, so it no longer refracts a frozen slice of the page.
+- **The overlay menu stays attached to its button and has real glass**: the panel could end up detached, floating past the window's edge; it now picks the side with room and caps its height (the content scrolls inside) instead of overflowing, and on dark surfaces it is backed by the real liquid glass, aligned to the page behind it.
+- **Bigger aspect-ratio page**: the ratio rows in the overlay menu are taller, with bigger icons, text and touch targets.
+- **Less flicker while resizing**: window updates during move/resize drags are coalesced to one per animation frame.
+- **The to-bubble (minus) button is back on the overlay bar**, next to the expand (plus) button — inside the menu it was too slow to reach.
+- **Tap the bar's pill to edit the URL**: in the overlay, tapping the pill opens a URL editor (full URL shown, editable, non-URL input becomes a search). The in-app browser's title/URL area opens the same editor as a dialog.
+
 ## What's new in v2.3.15
 
 - **The chooser's finger-follow pill is stable now**: on device it wobbled and the row icon smeared into a rainbow streak while dragging. Two causes: the pill's glass was being resized every frame (its spring edges change its height while travelling), forcing the glass view to re-layout and re-record constantly; and any refraction/dispersion samples the rows mid-motion, which smears no matter how gently it is tuned. The glass now locks its size when a drag starts and only slides (translation), and while tracking it is a plain frosted capsule — blur and tint only, nothing left to smear.
@@ -184,6 +194,16 @@ The ad-blocking list is built from the public [pgl.yoyo.org adservers](https://p
 - **共有先アプリを選択画面に（v2.3.0）**：クイック共有は廃止し、共有を受け付けるアプリが選択画面に「開き方」として直接並ぶようになりました（設定で追加・削除できます）
 - **URLセキュリティチェック（v2.1.0）**：IPアドレスへのリンク、国際化ドメイン（xn--）、ユーザー情報を含むURLなど、怪しいリンクを開く前に警告します（OFFにもできます）
 - **その他**：記事モード、タブと履歴、デスクトップサイト切替、細かい設定を集約した設定画面、日本語／英語の表示切替（設定 → 言語）
+
+## v2.3.16の新機能
+
+- **アプリ内ブラウザのバーがきれいにスライドして消えます**：スクロールで隠れるバーが途中で止まって文字だけ残ることがあり、消え方も縮小でした。上下のバーともスライド式に変え（下バーは下へスライド）、スクロール判定は一方向の移動量を貯めてから切り替えるようにして、微振動でアニメーションが固まることがなくなりました
+- **オーバーレイのバーのガラスがスクロールに追随します**：ページをスクロールするとガラスが再記録され、止まったページの断片を屈折し続けなくなりました
+- **オーバーレイのメニューがボタンにくっついて、本物ガラスになりました**：パネルがボタンから離れて窓の外にはみ出すことがありましたが、空きの広い側に付き、入りきらない時は高さを制限して中身がスクロールします。ダーク面では背面に本物ガラスが入ります
+- **比率ページを大きくしました**：オーバーレイのメニューの比率行を高くし、アイコン・文字・当たり判定を大きくしました
+- **リサイズ中のチカチカを抑えました**：移動・リサイズのドラッグ中の窓更新を1フレーム1回にまとめました
+- **バブル化（マイナス）ボタンをバーに戻しました**：展開（プラス）ボタンの隣です。メニューの中では届きにくかったので
+- **バーのピルをタップするとURLを編集できます**：オーバーレイではピルのタップでURLエディタが開きます（全文表示・編集可・URLでなければ検索）。アプリ内ブラウザでもタイトル/URL部分のタップで同じエディタが開きます
 
 ## v2.3.15の新機能
 
